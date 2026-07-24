@@ -25,10 +25,10 @@
             margin-bottom: 10px;
         }
 
-        /* 階段 1 取景框：3.5:1.5 比例 (寬 350px, 高 150px) */
+        /* 階段 1 取景框：3.5:2 比例 (寬 350px, 高 200px) */
         .camera-container-step1 {
             width: 350px;
-            height: 150px;
+            height: 200px;
             margin: 15px auto;
             position: relative;
             overflow: hidden;
@@ -131,7 +131,7 @@
 <body>
 
     <h2>門市產品辨識系統</h2>
-    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號 (3.5:1.5 視窗)</div>
+    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號 (3.5:2 視窗)</div>
 
     <!-- 視訊取景容器 -->
     <div id="cameraBox" class="camera-container-step1">
@@ -208,7 +208,7 @@
                 });
                 video.srcObject = stream;
                 captureOCRBtn.disabled = false;
-                statusDiv.innerText = "請將品號對準 3.5:1.5 橘色視窗，點擊「擷取品號」";
+                statusDiv.innerText = "請將品號對準 3.5:2 橘色視窗，點擊「擷取品號」";
             } catch (err) {
                 try {
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
@@ -225,7 +225,7 @@
             }
         }
 
-        // 2. 第一階段：精確橘框裁切 + 智慧黑白反相處理 AI 辨識
+        // 2. 第一階段：精確橘框裁切 (3.5:2) + 智慧黑白反相處理 AI 辨識
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
@@ -235,7 +235,8 @@
             const vWidth = video.videoWidth || 1920;
             const vHeight = video.videoHeight || 1080;
 
-            const boxAspect = 350 / 150;
+            // 計算 3.5:2 (350/200) 橘框在影像中的精確裁切範圍
+            const boxAspect = 350 / 200;
             const videoAspect = vWidth / vHeight;
 
             let cropW, cropH, cropX, cropY;
@@ -367,10 +368,10 @@
             statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框，點擊「拍產品圖」`;
         }
 
-        // 重置為第二階段即時畫面狀態 (重拍時擦除定格畫面)
+        // 重置為第二階段即時畫面狀態
         function resetToStep2Camera() {
-            freezeCtx.clearRect(0, 0, freezePreview.width, freezePreview.height); // 【修復】清空定格畫布
-            freezePreview.style.display = "none"; // 隱藏定格 Canvas，顯露即時 Video
+            freezeCtx.clearRect(0, 0, freezePreview.width, freezePreview.height);
+            freezePreview.style.display = "none";
             captureProductBtn.style.display = "inline-block";
             retakeBtn.style.display = "none";
             saveBtn.style.display = "none";
@@ -404,7 +405,6 @@
             productCtx.clearRect(0, 0, targetWidth, targetHeight);
             productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            // 調整定格預覽 Canvas 尺寸並顯示定格畫面
             freezePreview.width = targetWidth;
             freezePreview.height = targetHeight;
             freezePreview.style.display = "block";
@@ -432,14 +432,14 @@
             resetToStep1();
         }
 
-        // 自動重置回到第一階段 (徹底恢復相機即時動態)
+        // 自動重置回到第一階段
         function resetToStep1() {
             confirmedFileName = "";
             capturedBase64Data = "";
             manualInput.value = "";
 
-            freezeCtx.clearRect(0, 0, freezePreview.width, freezePreview.height); // 【修復】清空定格畫布
-            freezePreview.style.display = "none"; // 隱藏定格 Canvas，露出即時 Video
+            freezeCtx.clearRect(0, 0, freezePreview.width, freezePreview.height);
+            freezePreview.style.display = "none";
             
             captureProductBtn.style.display = "none";
             retakeBtn.style.display = "none";
@@ -447,7 +447,7 @@
             selectionPanel.style.display = "none";
 
             cameraBox.className = "camera-container-step1";
-            stepBadge.innerText = "第一階段：拍攝並辨識品號 (3.5:1.5 視窗)";
+            stepBadge.innerText = "第一階段：拍攝並辨識品號 (3.5:2 視窗)";
             stepBadge.style.backgroundColor = "#007bff";
             captureOCRBtn.style.display = "inline-block";
 
