@@ -25,14 +25,14 @@
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { 
                         facingMode: { exact: "environment" },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
+                        width: { ideal: 2100 },
+                        height: { ideal: 900 }
                     },
                     audio: false
                 });
                 video.srcObject = stream;
                 captureOCRBtn.disabled = false;
-                statusDiv.innerText = "請將品號對準 3:1 橘色視窗，點擊「擷取品號」";
+                statusDiv.innerText = "請將品號對準橘色視窗，點擊「擷取品號」";
             } catch (err) {
                 try {
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
