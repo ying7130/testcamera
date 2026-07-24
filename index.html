@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V3.1</title>
+    <title>門市品號辨識系統 V3.3</title>
+    <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
@@ -37,7 +38,7 @@
             background: black;
             border: 3px solid #ff9800;
             border-radius: 8px;
-            touch-action: none; /* 阻止瀏覽器預設捲動 */
+            touch-action: none; /* 阻止瀏覽器預設捲動與縮放 */
         }
 
         /* 第二階段 284x257 產品拍照容器 */
@@ -145,7 +146,7 @@
             color: #0056b3;
         }
 
-        /* 簡化後的角度旋轉控制列 */
+        /* 旋轉控制列 */
         .transform-controls {
             margin: 10px auto;
             max-width: 900px;
@@ -164,25 +165,27 @@
         }
 
         .slider-group input[type=range] {
-            width: 60%;
+            width: 55%;
         }
     </style>
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V3.1</h2>
+    <h2>門市品號辨識系統 V3.3</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
+    <!-- 第一階段取景區域 -->
     <div id="cameraBox" class="camera-area">
-        <video id="video" class="layer" autoplay playsinline></video>
+        <video id="video" class="layer" autoplay playsinline muted></video>
         <canvas id="freezeCanvas" class="layer" width="1200" height="800"></canvas>
         <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
     </div>
 
+    <!-- 精密旋轉角度微調列 -->
     <div id="transformBar" class="transform-controls">
         <div class="slider-group">
-            <span style="font-weight:bold; font-size:14px;">旋轉角度:</span>
+            <span style="font-weight:bold; font-size:14px;">旋轉微調:</span>
             <button onclick="stepRotate(-1)" class="purple">-1°</button>
             <input type="range" id="rotateSlider" min="-180" max="180" value="0" oninput="onRotateSliderChange(this.value)">
             <button onclick="stepRotate(1)" class="purple">+1°</button>
@@ -191,6 +194,7 @@
         </div>
     </div>
 
+    <!-- 放大鏡 -->
     <div id="zoomBox">
         <canvas id="zoomCanvas" width="600" height="240"></canvas>
     </div>
@@ -205,6 +209,7 @@
 
     <div id="status">請點擊「開啟鏡頭」</div>
 
+    <!-- 結果選單 -->
     <div id="resultPanel">
         <h3 style="margin-top:0;">確認品號</h3>
         <div id="results"></div>
@@ -213,8 +218,9 @@
         <button onclick="confirmCode()" class="green" style="width:100%; font-size:18px;">確認品號 ➔ 下一步</button>
     </div>
 
+    <!-- 第二階段：產品拍照與定格區域 -->
     <div id="productBox" class="product-area" style="display:none">
-        <video id="productVideo" class="layer" autoplay playsinline></video>
+        <video id="productVideo" class="layer" autoplay playsinline muted></video>
         <canvas id="productFreezeCanvas" class="layer" width="284" height="257"></canvas>
     </div>
 
@@ -254,20 +260,24 @@
         let confirmedCode = "";
         let barcodeDetector = null;
 
-        // 圖片變換參數 (支援拖曳照片與雙指縮放)
+        // 圖片變換矩陣狀態
         let imgRotation = 0;
         let imgScale = 1.0;
         let imgOffsetX = 0;
         let imgOffsetY = 0;
 
-        // 手勢操作控制變數
+        // 手勢操控變數 (單指平移、雙指旋轉與捏合縮放)
         let isDragBox = false;
         let isResizeBox = false;
         let isDragImage = false;
         let touchStartPos = { x: 0, y: 0 };
         let boxDragOffset = { x: 0, y: 0 };
+        
+        // 雙指手勢紀錄
         let initialPinchDist = 0;
+        let initialPinchAngle = 0;
         let initialScale = 1.0;
+        let initialRotation = 0;
 
         if ('BarcodeDetector' in window) {
             try {
@@ -287,19 +297,27 @@
         async function startCamera() {
             stopCurrentStream();
             status.innerHTML = "正在啟動鏡頭...";
-            try {
-                activeStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
-                    audio: false
-                });
-                video.srcObject = activeStream;
-                captureBtn.disabled = false;
-                startCamBtn.style.display = "none";
-                status.innerHTML = "請對準品號後按下「📸 定格畫面」";
-            } catch (e) {
-                alert("無法開啟鏡頭：" + e.message);
-                status.innerHTML = "鏡頭啟動失敗：" + e.message;
+            
+            const constraintsList = [
+                { video: { facingMode: { exact: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+                { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+                { video: true, audio: false }
+            ];
+
+            for (let constraints of constraintsList) {
+                try {
+                    activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    video.srcObject = activeStream;
+                    await video.play();
+                    captureBtn.disabled = false;
+                    startCamBtn.style.display = "none";
+                    status.innerHTML = "請對準品號後按下「📸 定格畫面」";
+                    return;
+                } catch (e) { console.log("Camera constraints fallback...", e); }
             }
+
+            alert("無法開啟鏡頭，請確認權限並使用 HTTPS 網址！");
+            status.innerHTML = "無法開啟鏡頭！";
         }
 
         function freezeImage() {
@@ -329,7 +347,7 @@
             clearBoxBtn.style.display = "inline-block";
             transformBar.style.display = "block";
 
-            status.innerHTML = "畫面已定格！直接在畫面上拖曳/雙指縮放照片，摸綠框移動綠框";
+            status.innerHTML = "畫面已定格！在畫面上用「單指拖曳」移動照片、「雙指旋轉/縮放」，摸綠框調整綠框";
             createDefaultBox();
         }
 
@@ -435,17 +453,20 @@
             boxCtx.fillRect(selectedBox.x + selectedBox.w - 20, selectedBox.y + selectedBox.h - 20, 40, 40);
         }
 
-        // --- 手勢事件處理：區分是摸綠框還是移動/縮放照片 ---
+        // --- 手勢事件處理：單指拖曳平移，雙指捏合縮放 + 旋轉照片 ---
         function handleStart(e) {
             if (!freezeDone) return;
 
-            // 雙指觸控：照片捏合縮放 (Pinch Zoom)
+            // 雙指觸控：同時進行縮放 (Zoom) 與旋轉 (Rotate)
             if (e.touches && e.touches.length === 2) {
                 isDragBox = false;
                 isResizeBox = false;
                 isDragImage = false;
+
                 initialPinchDist = getTouchDistance(e.touches);
+                initialPinchAngle = getTouchAngle(e.touches);
                 initialScale = imgScale;
+                initialRotation = imgRotation;
                 return;
             }
 
@@ -459,7 +480,6 @@
                 boxDragOffset.x = pos.x - selectedBox.x;
                 boxDragOffset.y = pos.y - selectedBox.y;
             } else {
-                // 沒碰到綠框，啟動「拖曳照片」模式
                 isDragImage = true;
             }
         }
@@ -467,12 +487,27 @@
         function handleMove(e) {
             if (!freezeDone) return;
 
-            // 處理雙指照片縮放
+            // 處理雙指手勢：同步控制照片縮放與旋轉
             if (e.touches && e.touches.length === 2) {
                 let dist = getTouchDistance(e.touches);
+                let angle = getTouchAngle(e.touches);
+
                 if (initialPinchDist > 0) {
-                    let factor = dist / initialPinchDist;
-                    imgScale = Math.min(Math.max(0.4, initialScale * factor), 4.0);
+                    // 1. 縮放計算
+                    let scaleFactor = dist / initialPinchDist;
+                    imgScale = Math.min(Math.max(0.4, initialScale * scaleFactor), 4.0);
+
+                    // 2. 旋轉角度計算
+                    let deltaAngle = angle - initialPinchAngle;
+                    let newRot = Math.round(initialRotation + deltaAngle);
+                    
+                    while (newRot > 180) newRot -= 360;
+                    while (newRot < -180) newRot += 360;
+
+                    imgRotation = newRot;
+                    rotateSlider.value = imgRotation;
+                    degVal.innerText = imgRotation + "°";
+
                     renderTransformedImage();
                 }
                 return;
@@ -491,7 +526,7 @@
                 redrawBox();
                 updateZoom();
             } else if (isDragImage) {
-                // 拖曳照片本體
+                // 單指拖曳平移照片本體
                 let dx = pos.x - touchStartPos.x;
                 let dy = pos.y - touchStartPos.y;
                 imgOffsetX += dx;
@@ -512,6 +547,12 @@
             let dx = touches[0].clientX - touches[1].clientX;
             let dy = touches[0].clientY - touches[1].clientY;
             return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getTouchAngle(touches) {
+            let dx = touches[1].clientX - touches[0].clientX;
+            let dy = touches[1].clientY - touches[0].clientY;
+            return Math.atan2(dy, dx) * (180 / Math.PI);
         }
 
         boxCanvas.addEventListener("mousedown", handleStart);
@@ -722,6 +763,7 @@
                     audio: false
                 });
                 productVideo.srcObject = activeStream;
+                await productVideo.play();
                 retakeProductPhoto();
             } catch (e) { alert("產品鏡頭錯誤：" + e.message); }
         }
