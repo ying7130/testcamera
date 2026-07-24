@@ -295,61 +295,47 @@
             statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框拍攝產品圖`;
         }
 
-        // 5. 第二階段：拍攝產品圖並強制轉為 284x257px & 72 DPI 下載
-        function captureProductImage() {
-            statusDiv.innerText = "正在處理 284x257 (72 DPI) 圖片...";
+   // 5. 第二階段：拍攝產品圖（保持原比例中心裁切，絕不變形拉伸）
+function captureProductImage() {
+    statusDiv.innerText = "正在處理 284x257 (72 DPI) 圖片...";
 
-            productCtx.drawImage(video, 0, 0, 284, 257);
-            
-            const rawDataURL = productCanvas.toDataURL('image/jpeg', 0.95);
-            const finalImageBase64 = setJpegDpi(rawDataURL, 72);
+    const targetWidth = 284;
+    const targetHeight = 257;
+    const videoWidth = video.videoWidth || 1280;
+    const videoHeight = video.videoHeight || 720;
 
-            downloadImageToMobile(finalImageBase64, confirmedFileName + ".jpg");
+    // 計算 Cover (中心裁切) 比例
+    const targetAspect = targetWidth / targetHeight; // 284 / 257 ≈ 1.105
+    const videoAspect = videoWidth / videoHeight;   // 例如 16 / 9 ≈ 1.777
 
-            statusDiv.innerText = `下載完成！檔名：${confirmedFileName}.jpg (284x257, 72 DPI)`;
-        }
+    let sx, sy, sWidth, sHeight;
 
-        function downloadImageToMobile(base64Data, fileName) {
-            const link = document.createElement('a');
-            link.href = base64Data;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+    if (videoAspect > targetAspect) {
+        // 鏡頭畫面太寬，以高度為基準，裁切左右兩邊
+        sHeight = videoHeight;
+        sWidth = videoHeight * targetAspect;
+        sx = (videoWidth - sWidth) / 2;
+        sy = 0;
+    } else {
+        // 鏡頭畫面太高，以寬度為基準，裁切上下兩邊
+        sWidth = videoWidth;
+        sHeight = videoWidth / targetAspect;
+        sx = 0;
+        sy = (videoHeight - sHeight) / 2;
+    }
 
-        function toFullWidth(str) {
-            return str.replace(/[\u0021-\u007E]/g, s => String.fromCharCode(s.charCodeAt(0) + 0xFEE0));
-        }
+    // 清空 Canvas
+    productCtx.clearRect(0, 0, targetWidth, targetHeight);
 
-        function setJpegDpi(base64Image, dpi) {
-            const byteString = atob(base64Image.split(',')[1]);
-            const buffer = new Uint8Array(byteString.length);
-            for (let i = 0; i < byteString.length; i++) {
-                buffer[i] = byteString.charCodeAt(i);
-            }
+    // 從相機畫面的中心點 (sx, sy, sWidth, sHeight) 擷取，並等比例繪製到 284x257
+    productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
-                let offset = 2;
-                while (offset < buffer.length) {
-                    if (buffer[offset] === 0xFF && buffer[offset + 1] === 0xE0) {
-                        buffer[offset + 11] = 1;
-                        buffer[offset + 12] = (dpi >> 8) & 0xFF;
-                        buffer[offset + 13] = dpi & 0xFF;
-                        buffer[offset + 14] = (dpi >> 8) & 0xFF;
-                        buffer[offset + 15] = dpi & 0xFF;
-                        break;
-                    }
-                    offset += 1 + buffer[offset + 2];
-                }
-            }
+    // 轉為 72 DPI 檔頭 Base64
+    const rawDataURL = productCanvas.toDataURL('image/jpeg', 0.95);
+    const finalImageBase64 = setJpegDpi(rawDataURL, 72);
 
-            let binary = '';
-            for (let i = 0; i < buffer.byteLength; i++) {
-                binary += String.fromCharCode(buffer[i]);
-            }
-            return 'data:image/jpeg;base64,' + btoa(binary);
-        }
-    </script>
-</body>
-</html>
+    // 觸發下載
+    downloadImageToMobile(finalImageBase64, confirmedFileName + ".jpg");
+
+    statusDiv.innerText = `下載完成！完美裁切不變形：${confirmedFileName}.jpg (284x257, 72 DPI)`;
+}
