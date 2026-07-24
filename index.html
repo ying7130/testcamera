@@ -1,4 +1,155 @@
-<script>
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>門市品號辨識系統</title>
+    <!-- 載入 Tesseract.js OCR 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background-color: #f5f5f5;
+        }
+        
+        .step-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        /* 階段 1 取景框：3.5:1.5 比例 (寬 350px, 高 150px) */
+        .camera-container-step1 {
+            width: 350px;
+            height: 150px;
+            margin: 15px auto;
+            position: relative;
+            overflow: hidden;
+            border: 3px solid #ff9800; /* 橘框代表 3.5:1.5 辨識模式 */
+            border-radius: 8px;
+            background-color: #000;
+        }
+
+        /* 階段 2 取景框：284x257 比例 */
+        .camera-container-step2 {
+            width: 284px;
+            height: 257px;
+            margin: 15px auto;
+            position: relative;
+            overflow: hidden;
+            border: 3px solid #28a745; /* 綠框代表產品拍照模式 */
+            border-radius: 8px;
+            background-color: #000;
+        }
+
+        .webcam-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        button { 
+            padding: 10px 20px; 
+            font-size: 16px; 
+            margin: 5px; 
+            cursor: pointer; 
+            border-radius: 5px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+        }
+        button:disabled { background-color: #ccc; }
+        .btn-green { background-color: #28a745; }
+        
+        #status { font-weight: bold; margin: 10px; color: #333; }
+        
+        #selectionPanel {
+            display: none;
+            max-width: 320px;
+            margin: 15px auto;
+            padding: 15px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: left;
+        }
+        .option-item {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: left;
+            color: #333;
+            font-size: 15px;
+            font-weight: bold;
+        }
+        .option-item:hover, .option-item:active { 
+            background: #e2e6ea; 
+            border-color: #007bff;
+        }
+        .custom-input-group {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px dashed #ccc;
+        }
+        .custom-input-group input {
+            width: calc(100% - 22px);
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 8px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        #ocrCanvas, #productCanvas { display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>門市產品辨識系統</h2>
+    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號 (3.5:1.5 視窗)</div>
+
+    <!-- 視訊取景容器（預設為 3.5:1.5 框） -->
+    <div id="cameraBox" class="camera-container-step1">
+        <video id="webcam" class="webcam-video" autoplay playsinline></video>
+    </div>
+    
+    <div>
+        <button id="startBtn" onclick="initCamera()">📷 開啟鏡頭</button>
+        <button id="captureOCRBtn" onclick="captureAndRecognize()" disabled>🔍 1. 擷取品號</button>
+        <button id="captureProductBtn" class="btn-green" onclick="captureProductImage()" style="display:none;">📸 2. 拍產品圖並存檔</button>
+    </div>
+    
+    <div id="status">請點擊「開啟鏡頭」</div>
+
+    <!-- 第一階段：辨識結果微調面板 -->
+    <div id="selectionPanel">
+        <p style="margin-top:0; font-weight:bold; color:#007bff;">請點選可能品號帶入下方：</p>
+        <div id="optionsContainer"></div>
+        
+        <div class="custom-input-group">
+            <p style="margin:5px 0; font-size:14px; font-weight:bold; color:#333;">確認/微調品號：</p>
+            <input type="text" id="manualInput" placeholder="請點選上方選項或在此輸入...">
+            <button style="width:100%; font-size:16px; font-weight:bold; padding:12px;" onclick="confirmCodeAndGoToStep2()">下一步：拍攝產品圖 ➔</button>
+        </div>
+    </div>
+
+    <!-- 輔助繪圖 Canvas -->
+    <canvas id="ocrCanvas"></canvas>
+    <canvas id="productCanvas" width="284" height="257"></canvas>
+
+    <script>
         const video = document.getElementById('webcam');
         const cameraBox = document.getElementById('cameraBox');
         const stepBadge = document.getElementById('stepBadge');
@@ -18,21 +169,21 @@
 
         let confirmedFileName = "";
 
-        // 1. 初始化鏡頭 (兼顧高畫質與最佳相容性)
+        // 1. 初始化鏡頭
         async function initCamera() {
             statusDiv.innerText = "正在啟動鏡頭...";
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { 
                         facingMode: { exact: "environment" },
-                        width: { ideal: 2100 },
-                        height: { ideal: 900 }
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     },
                     audio: false
                 });
                 video.srcObject = stream;
                 captureOCRBtn.disabled = false;
-                statusDiv.innerText = "請將品號對準橘色視窗，點擊「擷取品號」";
+                statusDiv.innerText = "請將品號對準 3.5:1.5 橘色視窗，點擊「擷取品號」";
             } catch (err) {
                 try {
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
@@ -41,7 +192,7 @@
                     });
                     video.srcObject = fallbackStream;
                     captureOCRBtn.disabled = false;
-                    statusDiv.innerText = "已啟用鏡頭，請對準 3:1 視窗";
+                    statusDiv.innerText = "已啟用鏡頭，請對準視窗";
                 } catch (e) {
                     statusDiv.innerText = "無法開啟鏡頭：" + e.message;
                     alert("鏡頭開啟失敗！請檢查是否使用 https:// 網址及相機權限。\n錯誤訊息：" + e.message);
@@ -49,7 +200,7 @@
             }
         }
 
-        // 2. 第一階段：完全使用手機原始解析度 (Full Native Pixel) 辨識
+        // 2. 第一階段：原始解析度全像素 AI 辨識
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
@@ -118,7 +269,7 @@
             selectionPanel.style.display = "block";
         }
 
-        // 4. 確認第一階段品號，切換至第二階段
+        // 4. 確認品號並切換至第二階段
         function confirmCodeAndGoToStep2() {
             const rawText = manualInput.value.trim();
             if (!rawText) {
@@ -142,7 +293,7 @@
             statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框拍攝產品圖`;
         }
 
-        // 5. 第二階段：拍攝產品圖（保持原比例中心裁切，絕不變形拉伸）
+        // 5. 第二階段：中心裁切不變形拍產品圖 (284x257 & 72 DPI)
         function captureProductImage() {
             statusDiv.innerText = "正在處理 284x257 (72 DPI) 圖片...";
 
@@ -151,43 +302,35 @@
             const videoWidth = video.videoWidth || 1280;
             const videoHeight = video.videoHeight || 720;
 
-            // 計算 Cover (中心裁切) 比例
-            const targetAspect = targetWidth / targetHeight; // 284 / 257 ≈ 1.105
-            const videoAspect = videoWidth / videoHeight;   // 例如 16 / 9 ≈ 1.777
+            const targetAspect = targetWidth / targetHeight; 
+            const videoAspect = videoWidth / videoHeight;   
 
             let sx, sy, sWidth, sHeight;
 
             if (videoAspect > targetAspect) {
-                // 鏡頭畫面太寬，以高度為基準，裁切左右兩邊
                 sHeight = videoHeight;
                 sWidth = videoHeight * targetAspect;
                 sx = (videoWidth - sWidth) / 2;
                 sy = 0;
             } else {
-                // 鏡頭畫面太高，以寬度為基準，裁切上下兩邊
                 sWidth = videoWidth;
                 sHeight = videoWidth / targetAspect;
                 sx = 0;
                 sy = (videoHeight - sHeight) / 2;
             }
 
-            // 清空 Canvas
             productCtx.clearRect(0, 0, targetWidth, targetHeight);
-
-            // 從相機畫面的中心點 (sx, sy, sWidth, sHeight) 擷取，並等比例繪製到 284x257
             productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            // 轉為 72 DPI 檔頭 Base64
             const rawDataURL = productCanvas.toDataURL('image/jpeg', 0.95);
             const finalImageBase64 = setJpegDpi(rawDataURL, 72);
 
-            // 觸發下載
             downloadImageToMobile(finalImageBase64, confirmedFileName + ".jpg");
 
             statusDiv.innerText = `下載完成！完美裁切不變形：${confirmedFileName}.jpg (284x257, 72 DPI)`;
         }
 
-        // 6. 下載圖片至手機的函式 (不可漏掉)
+        // 6. 下載圖片至手機
         function downloadImageToMobile(base64Data, fileName) {
             const link = document.createElement('a');
             link.href = base64Data;
@@ -197,12 +340,12 @@
             document.body.removeChild(link);
         }
 
-        // 7. 全形轉換函式 (不可漏掉)
+        // 7. 全形轉換
         function toFullWidth(str) {
             return str.replace(/[\u0021-\u007E]/g, s => String.fromCharCode(s.charCodeAt(0) + 0xFEE0));
         }
 
-        // 8. 寫入 72 DPI Header 函式 (不可漏掉)
+        // 8. 寫入 72 DPI Header
         function setJpegDpi(base64Image, dpi) {
             const byteString = atob(base64Image.split(',')[1]);
             const buffer = new Uint8Array(byteString.length);
@@ -232,3 +375,5 @@
             return 'data:image/jpeg;base64,' + btoa(binary);
         }
     </script>
+</body>
+</html>
