@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V2.2</title>
+    <title>門市品號辨識系統 V2.3</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
@@ -26,7 +26,7 @@
             font-size: 14px;
         }
 
-        /* 1200x800 取景與劃框容器 */
+        /* 1200x800 第一階段取景與劃框容器 */
         .camera-area {
             width: 100%;
             max-width: 900px;
@@ -40,7 +40,7 @@
             touch-action: none;
         }
 
-        /* 284x257 產品拍照容器 */
+        /* 284x257 第二階段產品拍照容器 */
         .product-area {
             width: 284px;
             height: 257px;
@@ -52,13 +52,26 @@
             border-radius: 8px;
         }
 
-        video, canvas.layer {
+        /* 第一階段 video 與 canvas 樣式 */
+        #cameraBox video, #cameraBox canvas.layer {
             width: 100%;
             height: 100%;
             position: absolute;
             left: 0;
             top: 0;
-            object-fit: cover; /* 保持標準顯示 */
+            object-fit: cover;
+            object-position: center;
+        }
+
+        /* 第二階段 video 與 canvas 樣式 (防變形核心修正) */
+        #productBox video, #productBox canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            left: 0;
+            top: 0;
+            object-fit: cover;
+            object-position: center;
         }
 
         #freezeCanvas { z-index: 2; display: none; }
@@ -135,7 +148,7 @@
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V2.2</h2>
+    <h2>門市品號辨識系統 V2.3</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
@@ -169,10 +182,11 @@
 
     <div id="productBox" class="product-area" style="display:none">
         <video id="productVideo" autoplay playsinline></video>
-        <canvas id="productCanvas" width="284" height="257"></canvas>
+        <canvas id="productCanvas" width="284" height="257" style="display:none;"></canvas>
     </div>
 
     <button id="takeProductBtn" style="display:none" class="green" onclick="takeProductPhoto()">📸 拍產品圖</button>
+    <button id="retakeProductBtn" style="display:none" class="red" onclick="retakeProductPhoto()">🔄 重拍產品</button>
     <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
 
     <script>
@@ -203,7 +217,7 @@
             } catch (e) { barcodeDetector = new BarcodeDetector(); }
         }
 
-        // 1. 啟動相機
+        // 1. 啟動第一階段相機
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -218,7 +232,7 @@
             }
         }
 
-        // 2. 精確對齊定格演算 (Cover Fit)
+        // 2. 定格畫面演算 (Cover Fit)
         function freezeImage() {
             const vw = video.videoWidth || 1920;
             const vh = video.videoHeight || 1080;
@@ -227,15 +241,9 @@
 
             let sx, sy, sw, sh;
             if (videoRatio > targetRatio) {
-                sh = vh;
-                sw = vh * targetRatio;
-                sx = (vw - sw) / 2;
-                sy = 0;
+                sh = vh; sw = vh * targetRatio; sx = (vw - sw) / 2; sy = 0;
             } else {
-                sw = vw;
-                sh = vw / targetRatio;
-                sx = 0;
-                sy = (vh - sh) / 2;
+                sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh) / 2;
             }
 
             freezeCtx.clearRect(0, 0, 1200, 800);
@@ -280,9 +288,7 @@
             updateZoom();
         }
 
-        // ===============================
-        // 1:1 絕對對齊座標換算
-        // ===============================
+        // 座標換算與劃框
         function getCanvasPosition(e) {
             const rect = boxCanvas.getBoundingClientRect();
             let clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -371,7 +377,7 @@
         boxCanvas.addEventListener("touchmove", (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
         boxCanvas.addEventListener("touchend", handleEnd);
 
-        // 放大鏡預覽 (完全重合取圖)
+        // 放大鏡預覽
         const zoomBox = document.getElementById("zoomBox");
         const zoomCanvas = document.getElementById("zoomCanvas");
         const zoomCtx = zoomCanvas.getContext("2d");
@@ -432,9 +438,7 @@
             ctx.putImageData(imgData, 0, 0);
         }
 
-        // ===============================
         // AI 辨識流程
-        // ===============================
         let ocrCandidates = [];
 
         async function runOCR() {
@@ -446,7 +450,6 @@
             let rawCrop = getCropCanvas(false);
             let processedCrop = getCropCanvas(true);
 
-            // 1. Google ML Kit 條碼掃描
             if (barcodeDetector) {
                 try {
                     const barcodes = await barcodeDetector.detect(rawCrop);
@@ -459,7 +462,6 @@
                 } catch (e) { console.log(e); }
             }
 
-            // 2. OCR 辨識 (雙軌：原圖 + 預處理圖)
             try {
                 const worker = await Tesseract.createWorker('eng');
                 await worker.setParameters({
@@ -550,7 +552,7 @@
         }
 
         // ===============================
-        // 第二階段：產品拍照 / 存檔
+        // 第二階段：防變形產品拍照 / 存檔
         // ===============================
         const productVideo = document.getElementById("productVideo");
         const productCanvas = document.getElementById("productCanvas");
@@ -563,11 +565,14 @@
                     audio: false
                 });
                 productVideo.srcObject = pStream;
+                productVideo.style.display = "block";
+                productCanvas.style.display = "none";
             } catch (e) { alert("產品鏡頭錯誤：" + e.message); }
         }
 
         function takeProductPhoto() {
-            const targetW = 284; const targetH = 257;
+            const targetW = 284;
+            const targetH = 257;
             const vw = productVideo.videoWidth || 1920;
             const vh = productVideo.videoHeight || 1080;
 
@@ -575,18 +580,43 @@
             const videoRatio = vw / vh;
             let sx, sy, sw, sh;
 
+            // 完全匹配 CSS object-fit: cover 裁切比例
             if (videoRatio > targetRatio) {
-                sh = vh; sw = vh * targetRatio; sx = (vw - sw) / 2; sy = 0;
+                sh = vh;
+                sw = vh * targetRatio;
+                sx = (vw - sw) / 2;
+                sy = 0;
             } else {
-                sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh) / 2;
+                sw = vw;
+                sh = vw / targetRatio;
+                sx = 0;
+                sy = (vh - sh) / 2;
             }
 
-            productCanvas.width = targetW; productCanvas.height = targetH;
+            productCanvas.width = targetW;
+            productCanvas.height = targetH;
             productCtx.clearRect(0, 0, targetW, targetH);
             productCtx.drawImage(productVideo, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-            status.innerHTML = "照片已拍攝！請點擊「💾 確認存檔」";
+            // 切換為照片預覽
+            productVideo.style.display = "none";
+            productCanvas.style.display = "block";
+
+            status.innerHTML = "照片已拍攝！可點擊「🔄 重拍產品」或「💾 確認存檔」";
+            document.getElementById("takeProductBtn").style.display = "none";
+            document.getElementById("retakeProductBtn").style.display = "inline-block";
             document.getElementById("saveBtn").style.display = "inline-block";
+        }
+
+        function retakeProductPhoto() {
+            productVideo.style.display = "block";
+            productCanvas.style.display = "none";
+
+            document.getElementById("takeProductBtn").style.display = "inline-block";
+            document.getElementById("retakeProductBtn").style.display = "none";
+            document.getElementById("saveBtn").style.display = "none";
+
+            status.innerHTML = "請重新對準產品，按「📸 拍產品圖」";
         }
 
         function setJpegDpi(base64, dpi) {
@@ -631,6 +661,7 @@
 
             document.getElementById("productBox").style.display = "none";
             document.getElementById("takeProductBtn").style.display = "none";
+            document.getElementById("retakeProductBtn").style.display = "none";
             document.getElementById("saveBtn").style.display = "none";
 
             document.getElementById("cameraBox").style.display = "block";
