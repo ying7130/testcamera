@@ -25,7 +25,7 @@
             margin-bottom: 10px;
         }
 
-        /* 階段 1 取景框：1200x800 比例 */
+        /* 階段 1 取景框：1200x800 比例 (3:2) */
         .camera-container-step1 {
             width: 100%;
             max-width: 1200px;
@@ -111,12 +111,6 @@
             background: #e2e6ea; 
             border-color: #007bff;
         }
-        .barcode-tag {
-            color: #d9534f;
-            font-size: 12px;
-            font-weight: normal;
-            margin-left: 5px;
-        }
         .custom-input-group {
             margin-top: 15px;
             padding-top: 10px;
@@ -200,6 +194,19 @@
 
         let confirmedFileName = "";
         let capturedBase64Data = "";
+        let barcodeDetector = null;
+
+        // 初始化 Google ML Kit Barcode Detector
+        if ('BarcodeDetector' in window) {
+            try {
+                barcodeDetector = new BarcodeDetector({
+                    formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code', 'data_matrix', 'upc_a', 'upc_e']
+                });
+            } catch (e) {
+                console.log("ML Kit Barcode formats fallback");
+                barcodeDetector = new BarcodeDetector();
+            }
+        }
 
         // 1. 初始化鏡頭
         async function initCamera() {
@@ -232,12 +239,12 @@
             }
         }
 
-        // 2. 第一階段：雙重辨識 (條碼掃描 + 文字 OCR)
+        // 2. 第一階段：Google ML Kit 條碼 + 文字 OCR 雙重處理
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
             manualInput.value = "";
-            statusDiv.innerText = "正在掃描條碼與進行文字辨識...";
+            statusDiv.innerText = "正在進行 Google ML Kit 條碼掃描與文字 AI 辨識...";
 
             const vWidth = video.videoWidth || 1920;
             const vHeight = video.videoHeight || 1080;
@@ -264,30 +271,29 @@
 
             let candidates = [];
 
-            // --- A. 先執行「條碼掃描 (Barcode / QR Code)」---
-            if ('BarcodeDetector' in window) {
+            // A. 先使用 Android 原生 Google ML Kit (BarcodeDetector) 解碼
+            if (barcodeDetector) {
                 try {
-                    const barcodeDetector = new BarcodeDetector();
                     const barcodes = await barcodeDetector.detect(ocrCanvas);
-                    barcodes.forEach(barcode => {
-                        let val = barcode.rawValue.trim().toUpperCase();
+                    barcodes.forEach(b => {
+                        let val = b.rawValue ? b.rawValue.trim().toUpperCase() : "";
                         if (val && !candidates.includes(val)) {
                             candidates.push(val);
                         }
                     });
                 } catch (e) {
-                    console.log("Barcode detection error or unsupported:", e);
+                    console.log("ML Kit detection pass:", e);
                 }
             }
 
-            // --- B. 執行「文字 OCR 辨識」---
+            // B. 進行圖像預處理 + 文字 OCR 辨識
             preprocessImageForOCR(ocrCtx, cropW, cropH);
 
             try {
                 const worker = await Tesseract.createWorker('eng');
                 await worker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/*',
-                    tessedit_pageseg_mode: '7',
+                    tessedit_pageseg_mode: '6',
                     load_system_dawg: '0',
                     load_freq_dawg: '0',
                 });
@@ -316,7 +322,7 @@
             }
         }
 
-        // 智慧二值化預處理（自動判斷黑白底並修正為白底黑字）
+        // 智慧二值化預處理
         function preprocessImageForOCR(ctx, width, height) {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
@@ -330,16 +336,16 @@
             }
             
             const avgBrightness = totalBrightness / pixelCount;
-            const isDarkBackground = avgBrightness < 128;
+            const isDarkBackground = avgBrightness < 120;
 
             for (let i = 0; i < data.length; i += 4) {
                 let brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
                 
                 let value;
                 if (isDarkBackground) {
-                    value = brightness > 100 ? 0 : 255;
+                    value = brightness > 110 ? 0 : 255;
                 } else {
-                    value = brightness < 140 ? 0 : 255;
+                    value = brightness < 130 ? 0 : 255;
                 }
 
                 data[i] = value;
