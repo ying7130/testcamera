@@ -2,47 +2,50 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>門市品號辨識系統 V2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>門市品號辨識系統 V2.1</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             text-align: center;
-            padding: 20px;
+            padding: 10px;
             background: #f5f5f5;
+            margin: 0;
         }
 
-        h2 { margin-bottom: 10px; }
+        h2 { margin: 10px 0; font-size: 20px; }
 
         .badge {
             display: inline-block;
-            padding: 8px 18px;
+            padding: 6px 16px;
             background: #007bff;
             color: white;
             border-radius: 20px;
             font-weight: bold;
+            font-size: 14px;
         }
 
-        /* 第一階段辨識視窗 */
+        /* 1200x800 取景與劃框容器 */
         .camera-area {
             width: 100%;
             max-width: 900px;
             aspect-ratio: 1200 / 800;
-            margin: 15px auto;
+            margin: 10px auto;
             position: relative;
             overflow: hidden;
             background: black;
             border: 3px solid #ff9800;
             border-radius: 8px;
+            touch-action: none; /* 防止手機拖曳網頁 */
         }
 
-        /* 第二階段產品拍照 */
+        /* 284x257 產品拍照容器 */
         .product-area {
             width: 284px;
             height: 257px;
-            margin: 15px auto;
+            margin: 10px auto;
             position: relative;
             overflow: hidden;
             background: black;
@@ -53,32 +56,14 @@
         video, canvas.layer {
             width: 100%;
             height: 100%;
+            position: absolute;
+            left: 0;
+            top: 0;
             object-fit: cover;
         }
 
-        video {
-            position: absolute;
-            left: 0;
-            top: 0;
-        }
-
-        /* 疊加框與定格圖 */
-        .layer {
-            position: absolute;
-            left: 0;
-            top: 0;
-            z-index: 5;
-        }
-
-        #freezeCanvas {
-            display: none;
-            position: absolute;
-            left: 0;
-            top: 0;
-            z-index: 3;
-        }
-
-        #boxCanvas { z-index: 10; }
+        #freezeCanvas { z-index: 2; display: none; }
+        #boxCanvas { z-index: 5; }
 
         /* 放大鏡 */
         #zoomBox {
@@ -91,40 +76,36 @@
             overflow: hidden;
         }
 
-        #zoomCanvas {
-            width: 100%;
-            height: 100%;
-        }
+        #zoomCanvas { width: 100%; height: 100%; }
 
         button {
-            padding: 10px 18px;
-            margin: 5px;
+            padding: 10px 16px;
+            margin: 4px;
             border: none;
             border-radius: 5px;
-            font-size: 16px;
+            font-size: 15px;
             background: #007bff;
             color: white;
+            font-weight: bold;
             cursor: pointer;
         }
 
+        button:disabled { background: #ccc; }
         .green { background: #28a745; }
         .orange { background: #ff9800; }
-        .gray { background: #555; }
+        .gray { background: #6c757d; }
+        .red { background: #dc3545; }
 
-        #status {
-            font-weight: bold;
-            margin: 15px;
-            color: #333;
-        }
+        #status { font-weight: bold; margin: 10px; color: #333; font-size: 14px; }
 
         #resultPanel {
             max-width: 350px;
-            margin: auto;
+            margin: 10px auto;
             background: white;
             padding: 15px;
             border-radius: 8px;
             display: none;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         }
 
         input {
@@ -135,54 +116,57 @@
             border: 2px solid #007bff;
             border-radius: 4px;
             box-sizing: border-box;
+            text-align: center;
         }
 
         .result-item {
             padding: 10px;
             margin: 5px 0;
-            background: #eee;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
             cursor: pointer;
             border-radius: 5px;
             text-align: left;
             font-weight: bold;
         }
 
-        .result-item:hover, .result-item:active {
-            background: #e2e6ea;
-            border: 1px solid #007bff;
-        }
+        .result-item:active { background: #e2e6ea; border-color: #007bff; }
     </style>
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V2</h2>
+    <h2>門市品號辨識系統 V2.1</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
+    <!-- 取景區域 -->
     <div id="cameraBox" class="camera-area">
         <video id="video" autoplay playsinline></video>
         <canvas id="freezeCanvas" width="1200" height="800"></canvas>
         <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
     </div>
 
+    <!-- 綠框放大預覽 -->
     <div id="zoomBox">
         <canvas id="zoomCanvas"></canvas>
     </div>
 
     <div>
         <button onclick="startCamera()">📷 開啟鏡頭</button>
-        <button id="captureBtn" onclick="freezeImage()" disabled>🔍 定格畫面</button>
-        <button id="ocrBtn" onclick="runOCR()" style="display:none" class="orange">AI 辨識品號 / 掃條碼</button>
-        <button id="clearBoxBtn" onclick="resetBox()" style="display:none" class="gray">清除框</button>
+        <button id="captureBtn" onclick="freezeImage()" disabled class="orange">📸 定格畫面</button>
+        <button id="retakeBtn" onclick="unfreezeImage()" style="display:none;" class="red">🔄 重拍</button>
+        <button id="ocrBtn" onclick="runOCR()" style="display:none;" class="green">🔍 辨識框內品號</button>
+        <button id="clearBoxBtn" onclick="resetBox()" style="display:none;" class="gray">清空框</button>
     </div>
 
     <div id="status">請點擊「開啟鏡頭」</div>
 
+    <!-- 結果選單 -->
     <div id="resultPanel">
-        <h3>品號確認</h3>
+        <h3 style="margin-top:0;">確認品號</h3>
         <div id="results"></div>
-        <input id="manualCode" placeholder="人工輸入品號">
-        <br>
+        <p style="margin:5px 0; font-size:12px; color:#666;">可點選上方建議或在此手動修改：</p>
+        <input id="manualCode" placeholder="請輸入品號">
         <button onclick="confirmCode()" class="green" style="width:100%; font-size:18px;">確認品號 ➔ 下一步</button>
     </div>
 
@@ -205,6 +189,9 @@
 
         const status = document.getElementById("status");
         const captureBtn = document.getElementById("captureBtn");
+        const retakeBtn = document.getElementById("retakeBtn");
+        const ocrBtn = document.getElementById("ocrBtn");
+        const clearBoxBtn = document.getElementById("clearBoxBtn");
 
         let stream = null;
         let freezeDone = false;
@@ -212,17 +199,15 @@
         let confirmedCode = "";
         let barcodeDetector = null;
 
-        // 初始化 Google ML Kit Barcode Detector
         if ('BarcodeDetector' in window) {
             try {
                 barcodeDetector = new BarcodeDetector({
-                    formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code', 'data_matrix', 'upc_a', 'upc_e']
+                    formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code', 'upc_a']
                 });
-            } catch (e) {
-                barcodeDetector = new BarcodeDetector();
-            }
+            } catch (e) { barcodeDetector = new BarcodeDetector(); }
         }
 
+        // 1. 啟動相機
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -231,26 +216,63 @@
                 });
                 video.srcObject = stream;
                 captureBtn.disabled = false;
-                status.innerHTML = "請將品號對準畫面後，按「定格畫面」";
+                status.innerHTML = "對準品號後按下「📸 定格畫面」";
             } catch (e) {
                 alert("無法開啟鏡頭：" + e.message);
             }
         }
 
+        // 2. 定格畫面 (等比例裁切繪製至 1200x800 Canvas)
         function freezeImage() {
-            freezeCtx.drawImage(video, 0, 0, 1200, 800);
+            const vw = video.videoWidth || 1920;
+            const vh = video.videoHeight || 1080;
+            const targetRatio = 1200 / 800;
+            const videoRatio = vw / vh;
+
+            let sx, sy, sw, sh;
+            if (videoRatio > targetRatio) {
+                sh = vh; sw = vh * targetRatio;
+                sx = (vw - sw) / 2; sy = 0;
+            } else {
+                sw = vw; sh = vw / targetRatio;
+                sx = 0; sy = (vh - sh) / 2;
+            }
+
+            freezeCtx.clearRect(0, 0, 1200, 800);
+            freezeCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 1200, 800);
+
             freezeCanvas.style.display = "block";
             freezeDone = true;
-            document.getElementById("ocrBtn").style.display = "inline-block";
-            status.innerHTML = "圖片已定格！可拖曳調整綠框範圍，然後點擊「AI 辨識品號」";
+
+            captureBtn.style.display = "none";
+            retakeBtn.style.display = "inline-block";
+            ocrBtn.style.display = "inline-block";
+            clearBoxBtn.style.display = "inline-block";
+
+            status.innerHTML = "畫面已定格！請用手指在畫面上劃出或拖曳綠框框選品號";
             createDefaultBox();
-            updateZoom();
+        }
+
+        // 解除定格（重拍）
+        function unfreezeImage() {
+            freezeCanvas.style.display = "none";
+            freezeDone = false;
+
+            resetBox();
+
+            captureBtn.style.display = "inline-block";
+            retakeBtn.style.display = "none";
+            ocrBtn.style.display = "none";
+            clearBoxBtn.style.display = "none";
+            document.getElementById("resultPanel").style.display = "none";
+
+            status.innerHTML = "已恢復即時畫面，請重新對準品號定格";
         }
 
         function createDefaultBox() {
-            selectedBox = { x: 300, y: 300, w: 600, h: 150 };
+            selectedBox = { x: 300, y: 320, w: 600, h: 160 };
             redrawBox();
-            document.getElementById("clearBoxBtn").style.display = "inline-block";
+            updateZoom();
         }
 
         function resetBox() {
@@ -260,7 +282,7 @@
         }
 
         // ===============================
-        // 綠框拖曳 / 調整 / 放大鏡
+        // 畫框、拖曳、縮放與座標轉換
         // ===============================
         function getCanvasPosition(e) {
             const rect = boxCanvas.getBoundingClientRect();
@@ -268,8 +290,8 @@
             let clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
             return {
-                x: (clientX - rect.left) * (boxCanvas.width / rect.width),
-                y: (clientY - rect.top) * (boxCanvas.height / rect.height)
+                x: (clientX - rect.left) * (1200 / rect.width),
+                y: (clientY - rect.top) * (800 / rect.height)
             };
         }
 
@@ -279,33 +301,37 @@
                     pos.y >= selectedBox.y && pos.y <= selectedBox.y + selectedBox.h);
         }
 
-        let dragging = false;
-        let resizing = false;
-        let dragOffset = { x: 0, y: 0 };
-
         function nearResizePoint(pos) {
             if (!selectedBox) return false;
             let rx = selectedBox.x + selectedBox.w;
             let ry = selectedBox.y + selectedBox.h;
-            return Math.abs(pos.x - rx) < 40 && Math.abs(pos.y - ry) < 40;
+            return Math.abs(pos.x - rx) < 60 && Math.abs(pos.y - ry) < 60;
         }
 
+        let dragging = false;
+        let resizing = false;
+        let dragOffset = { x: 0, y: 0 };
+        let startPos = null;
+
         function redrawBox() {
-            boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+            boxCtx.clearRect(0, 0, 1200, 800);
             if (!selectedBox) return;
 
+            // 畫框
             boxCtx.strokeStyle = "#00ff00";
             boxCtx.lineWidth = 6;
             boxCtx.strokeRect(selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h);
 
-            // 右下角控制點
+            // 右下角控制小點
             boxCtx.fillStyle = "#00ff00";
-            boxCtx.fillRect(selectedBox.x + selectedBox.w - 15, selectedBox.y + selectedBox.h - 15, 30, 30);
+            boxCtx.fillRect(selectedBox.x + selectedBox.w - 20, selectedBox.y + selectedBox.h - 20, 40, 40);
         }
 
-        // 滑鼠與觸控事件綁定
         function handleStart(e) {
+            if (!freezeDone) return;
             let pos = getCanvasPosition(e);
+            startPos = pos;
+
             if (nearResizePoint(pos)) {
                 resizing = true;
             } else if (insideBox(pos)) {
@@ -313,18 +339,19 @@
                 dragOffset.x = pos.x - selectedBox.x;
                 dragOffset.y = pos.y - selectedBox.y;
             } else {
-                selectedBox = { x: pos.x, y: pos.y, w: 300, h: 120 };
-                redrawBox();
-                updateZoom();
+                // 點擊空白處，重新拉一個框
+                selectedBox = { x: pos.x, y: pos.y, w: 10, h: 10 };
+                resizing = true;
             }
         }
 
         function handleMove(e) {
-            if (!selectedBox) return;
+            if (!freezeDone || !selectedBox) return;
             let pos = getCanvasPosition(e);
+
             if (dragging) {
-                selectedBox.x = pos.x - dragOffset.x;
-                selectedBox.y = pos.y - dragOffset.y;
+                selectedBox.x = Math.max(0, Math.min(1200 - selectedBox.w, pos.x - dragOffset.x));
+                selectedBox.y = Math.max(0, Math.min(800 - selectedBox.h, pos.y - dragOffset.y));
                 redrawBox();
                 updateZoom();
             } else if (resizing) {
@@ -348,12 +375,11 @@
         boxCanvas.addEventListener("touchmove", (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
         boxCanvas.addEventListener("touchend", handleEnd);
 
-        // 放大鏡功能
+        // 放大鏡
         const zoomBox = document.getElementById("zoomBox");
         const zoomCanvas = document.getElementById("zoomCanvas");
         const zoomCtx = zoomCanvas.getContext("2d");
-        zoomCanvas.width = 600;
-        zoomCanvas.height = 240;
+        zoomCanvas.width = 600; zoomCanvas.height = 240;
 
         function updateZoom() {
             if (!selectedBox || !freezeDone) {
@@ -361,75 +387,25 @@
                 return;
             }
             zoomBox.style.display = "block";
-            zoomCtx.clearRect(0, 0, zoomCanvas.width, zoomCanvas.height);
-            zoomCtx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, zoomCanvas.width, zoomCanvas.height);
+            zoomCtx.clearRect(0, 0, 600, 240);
+            zoomCtx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, 600, 240);
         }
 
-        function getCropCanvas() {
-            if (!selectedBox) {
-                alert("請先劃定品號區域！");
-                return null;
-            }
+        function getCropCanvas(preprocess = false) {
+            if (!selectedBox) return null;
             let crop = document.createElement("canvas");
             crop.width = selectedBox.w;
             crop.height = selectedBox.h;
             let ctx = crop.getContext("2d");
             ctx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, selectedBox.w, selectedBox.h);
+
+            if (preprocess) {
+                preprocessCropImage(crop);
+            }
             return crop;
         }
 
-        // ===============================
-        // ML Kit 條碼 + Tesseract OCR
-        // ===============================
-        let ocrCandidates = [];
-
-        async function runOCR() {
-            let crop = getCropCanvas();
-            if (!crop) return;
-
-            status.innerHTML = "正在辨識條碼與文字...";
-            ocrCandidates = [];
-
-            // A. Google ML Kit 條碼掃描
-            if (barcodeDetector) {
-                try {
-                    const barcodes = await barcodeDetector.detect(crop);
-                    barcodes.forEach(b => {
-                        let val = b.rawValue ? b.rawValue.trim().toUpperCase() : "";
-                        if (val && !ocrCandidates.find(c => c.code === val)) {
-                            ocrCandidates.push({ code: val, score: 100, isBarcode: true });
-                        }
-                    });
-                } catch (e) {
-                    console.log("Barcode pass error:", e);
-                }
-            }
-
-            // B. 預處理二值化影像（黑白反相處理，支援黑底白字與螢幕拍照）
-            preprocessCropImage(crop);
-
-            // C. OCR 辨識
-            try {
-                const worker = await Tesseract.createWorker('eng');
-                await worker.setParameters({
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-*/',
-                    tessedit_pageseg_mode: '6',
-                    load_system_dawg: '0',
-                    load_freq_dawg: '0'
-                });
-
-                const result = await worker.recognize(crop);
-                await worker.terminate();
-
-                let text = result.data.text.trim();
-                let confidence = result.data.confidence;
-
-                processOCRResult(text, confidence);
-            } catch (e) {
-                status.innerHTML = "OCR 錯誤：" + e.message;
-            }
-        }
-
+        // 二值化預處理
         function preprocessCropImage(canvas) {
             const ctx = canvas.getContext("2d");
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -437,40 +413,80 @@
 
             let totalBrightness = 0;
             const pixelCount = data.length / 4;
-
             for (let i = 0; i < data.length; i += 4) {
                 totalBrightness += (data[i] + data[i + 1] + data[i + 2]) / 3;
             }
 
             const avgBrightness = totalBrightness / pixelCount;
-            const isDarkBackground = avgBrightness < 120;
+            const isDark = avgBrightness < 120;
 
             for (let i = 0; i < data.length; i += 4) {
                 let brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                let value;
-                if (isDarkBackground) {
-                    value = brightness > 110 ? 0 : 255;
-                } else {
-                    value = brightness < 130 ? 0 : 255;
-                }
+                let value = isDark ? (brightness > 110 ? 0 : 255) : (brightness < 130 ? 0 : 255);
                 data[i] = data[i + 1] = data[i + 2] = value;
             }
             ctx.putImageData(imgData, 0, 0);
         }
 
-        function processOCRResult(text, confidence) {
-            let clean = text.replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
+        // ===============================
+        // AI 辨識流程
+        // ===============================
+        let ocrCandidates = [];
 
-            if (clean && !ocrCandidates.find(c => c.code === clean)) {
-                ocrCandidates.push({ code: clean, score: Math.round(confidence), isBarcode: false });
-                generateSimilarCandidates(clean);
+        async function runOCR() {
+            if (!selectedBox) { alert("請先劃定品號區域！"); return; }
+
+            status.innerHTML = "正在辨識中，請稍候...";
+            ocrCandidates = [];
+
+            let rawCrop = getCropCanvas(false);
+            let processedCrop = getCropCanvas(true);
+
+            // 1. Google ML Kit 條碼掃描
+            if (barcodeDetector) {
+                try {
+                    const barcodes = await barcodeDetector.detect(rawCrop);
+                    barcodes.forEach(b => {
+                        let val = b.rawValue ? b.rawValue.trim().toUpperCase() : "";
+                        if (val && !ocrCandidates.find(c => c.code === val)) {
+                            ocrCandidates.push({ code: val, score: 100, isBarcode: true });
+                        }
+                    });
+                } catch (e) { console.log(e); }
             }
 
-            if (ocrCandidates.length === 0) {
-                showManualOnly();
-            } else {
-                showOCRResults();
+            // 2. OCR 辨識 (雙軌：原圖 + 預處理圖)
+            try {
+                const worker = await Tesseract.createWorker('eng');
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-*/',
+                    tessedit_pageseg_mode: '6',
+                    load_system_dawg: '0', load_freq_dawg: '0'
+                });
+
+                // A. 原圖辨識
+                const resRaw = await worker.recognize(rawCrop);
+                let textRaw = resRaw.data.text.trim();
+                let cleanRaw = textRaw.replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
+                if (cleanRaw) ocrCandidates.push({ code: cleanRaw, score: Math.round(resRaw.data.confidence), isBarcode: false });
+
+                // B. 二值化圖辨識
+                const resProcessed = await worker.recognize(processedCrop);
+                let textProc = resProcessed.data.text.trim();
+                let cleanProc = textProc.replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
+                if (cleanProc && !ocrCandidates.find(c => c.code === cleanProc)) {
+                    ocrCandidates.push({ code: cleanProc, score: Math.round(resProcessed.data.confidence), isBarcode: false });
+                }
+
+                await worker.terminate();
+
+                if (cleanRaw) generateSimilarCandidates(cleanRaw);
+
+            } catch (e) {
+                status.innerHTML = "OCR 辨識發生錯誤：" + e.message;
             }
+
+            showOCRResults();
         }
 
         function generateSimilarCandidates(code) {
@@ -482,7 +498,7 @@
 
             list.forEach(x => {
                 if (!ocrCandidates.find(y => y.code === x)) {
-                    ocrCandidates.push({ code: x, score: 70, isBarcode: false });
+                    ocrCandidates.push({ code: x, score: 60, isBarcode: false });
                 }
             });
         }
@@ -492,54 +508,32 @@
             let results = document.getElementById("results");
             results.innerHTML = "";
 
-            ocrCandidates.forEach(item => {
-                let div = document.createElement("div");
-                div.className = "result-item";
-                let tag = item.isBarcode ? " <span style='color:red;'>[條碼]</span>" : "";
-                div.innerHTML = `${item.code}${tag} <br><small style='color:#666;'>信心值：${item.score}%</small>`;
-
-                div.onclick = function () {
-                    document.getElementById("manualCode").value = formatDisplayCode(item.code);
-                };
-                results.appendChild(div);
-            });
-
-            if (ocrCandidates.length > 0) {
+            if (ocrCandidates.length === 0) {
+                status.innerHTML = "未辨識出文字，請手動輸入品號：";
+            } else {
+                status.innerHTML = "辨識完成，請點選正確品號：";
+                ocrCandidates.forEach(item => {
+                    let div = document.createElement("div");
+                    div.className = "result-item";
+                    let tag = item.isBarcode ? " <span style='color:red;'>[條碼]</span>" : "";
+                    div.innerHTML = `${formatDisplayCode(item.code)}${tag} <br><small style='color:#666;'>信心值：${item.score}%</small>`;
+                    div.onclick = function () {
+                        document.getElementById("manualCode").value = formatDisplayCode(item.code);
+                    };
+                    results.appendChild(div);
+                });
                 document.getElementById("manualCode").value = formatDisplayCode(ocrCandidates[0].code);
             }
-
             panel.style.display = "block";
-            status.innerHTML = "請人工確認正確品號：";
         }
 
-        function showManualOnly() {
-            document.getElementById("resultPanel").style.display = "block";
-            status.innerHTML = "未辨識成功，請手動輸入品號：";
-        }
-
-        // 全半形轉換 ( * / 轉全形，其餘半形)
         function formatDisplayCode(str) {
             return str.replace(/\*/g, "＊").replace(/\//g, "／");
         }
 
-        function checkERPFormat(code) {
-            if (code.length < 3) {
-                return { ok: false, message: "品號長度不足 3 碼" };
-            }
-            return { ok: true, message: "格式正常" };
-        }
-
         function confirmCode() {
             let code = document.getElementById("manualCode").value.trim();
-            if (!code) {
-                alert("請輸入品號！");
-                return;
-            }
-
-            let check = checkERPFormat(code);
-            if (!check.ok) {
-                if (!confirm(check.message + "\n仍要繼續嗎？")) return;
-            }
+            if (!code) { alert("請輸入品號！"); return; }
 
             confirmedCode = code;
 
@@ -550,7 +544,7 @@
             document.getElementById("takeProductBtn").style.display = "inline-block";
 
             document.getElementById("stepTitle").innerHTML = "第二階段：拍攝產品圖 (品號：" + confirmedCode + ")";
-            status.innerHTML = "請對準產品拍攝";
+            status.innerHTML = "請對準產品，按「📸 拍產品圖」";
 
             openProductCamera();
         }
@@ -561,23 +555,19 @@
         const productVideo = document.getElementById("productVideo");
         const productCanvas = document.getElementById("productCanvas");
         const productCtx = productCanvas.getContext("2d");
-        let productStream = null;
 
         async function openProductCamera() {
             try {
-                productStream = await navigator.mediaDevices.getUserMedia({
+                let pStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
                     audio: false
                 });
-                productVideo.srcObject = productStream;
-            } catch (e) {
-                alert("產品鏡頭錯誤：" + e.message);
-            }
+                productVideo.srcObject = pStream;
+            } catch (e) { alert("產品鏡頭錯誤：" + e.message); }
         }
 
         function takeProductPhoto() {
-            const targetW = 284;
-            const targetH = 257;
+            const targetW = 284; const targetH = 257;
             const vw = productVideo.videoWidth || 1920;
             const vh = productVideo.videoHeight || 1080;
 
@@ -586,33 +576,23 @@
             let sx, sy, sw, sh;
 
             if (videoRatio > targetRatio) {
-                sh = vh;
-                sw = vh * targetRatio;
-                sx = (vw - sw) / 2;
-                sy = 0;
+                sh = vh; sw = vh * targetRatio; sx = (vw - sw) / 2; sy = 0;
             } else {
-                sw = vw;
-                sh = vw / targetRatio;
-                sx = 0;
-                sy = (vh - sh) / 2;
+                sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh) / 2;
             }
 
-            productCanvas.width = targetW;
-            productCanvas.height = targetH;
+            productCanvas.width = targetW; productCanvas.height = targetH;
             productCtx.clearRect(0, 0, targetW, targetH);
             productCtx.drawImage(productVideo, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-            status.innerHTML = "產品照片完成！請確認無誤後點擊存檔";
+            status.innerHTML = "照片已拍攝！請點擊「💾 確認存檔」";
             document.getElementById("saveBtn").style.display = "inline-block";
         }
 
-        // JPEG 72 DPI Header 寫入 (修正 Return 換行修復 Bug)
         function setJpegDpi(base64, dpi) {
             let binary = atob(base64.split(",")[1]);
             let bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-                bytes[i] = binary.charCodeAt(i);
-            }
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
             for (let i = 0; i < bytes.length - 9; i++) {
                 if (bytes[i] === 0xFF && bytes[i + 1] === 0xE0) {
@@ -624,7 +604,6 @@
                     break;
                 }
             }
-
             let result = "";
             bytes.forEach(b => { result += String.fromCharCode(b); });
             return "data:image/jpeg;base64," + btoa(result);
@@ -648,22 +627,15 @@
 
         function resetSystem() {
             confirmedCode = "";
-            freezeDone = false;
-            selectedBox = null;
-
-            boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
-            freezeCtx.clearRect(0, 0, freezeCanvas.width, freezeCanvas.height);
-            freezeCanvas.style.display = "none";
+            unfreezeImage();
 
             document.getElementById("productBox").style.display = "none";
             document.getElementById("takeProductBtn").style.display = "none";
             document.getElementById("saveBtn").style.display = "none";
-            document.getElementById("resultPanel").style.display = "none";
-            document.getElementById("ocrBtn").style.display = "none";
 
             document.getElementById("cameraBox").style.display = "block";
             document.getElementById("stepTitle").innerHTML = "第一階段：品號辨識";
-            status.innerHTML = "請開始下一筆品號辨識";
+            status.innerHTML = "已重置，請開啟鏡頭開始下一筆";
         }
     </script>
 </body>
