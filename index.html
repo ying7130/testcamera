@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V2.1</title>
+    <title>門市品號辨識系統 V2.2</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -38,7 +38,7 @@
             background: black;
             border: 3px solid #ff9800;
             border-radius: 8px;
-            touch-action: none; /* 防止手機拖曳網頁 */
+            touch-action: none;
         }
 
         /* 284x257 產品拍照容器 */
@@ -59,7 +59,7 @@
             position: absolute;
             left: 0;
             top: 0;
-            object-fit: cover;
+            object-fit: fill; /* 強制與 1200x800 Canvas 像素對齊 */
         }
 
         #freezeCanvas { z-index: 2; display: none; }
@@ -68,12 +68,13 @@
         /* 放大鏡 */
         #zoomBox {
             display: none;
-            width: 300px;
-            height: 120px;
+            width: 320px;
+            height: 130px;
             margin: 10px auto;
             border: 2px solid #333;
             background: white;
             overflow: hidden;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
         }
 
         #zoomCanvas { width: 100%; height: 100%; }
@@ -135,7 +136,7 @@
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V2.1</h2>
+    <h2>門市品號辨識系統 V2.2</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
@@ -146,15 +147,15 @@
         <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
     </div>
 
-    <!-- 綠框放大預覽 -->
+    <!-- 放大鏡 (即時預覽綠框內的圖案) -->
     <div id="zoomBox">
-        <canvas id="zoomCanvas"></canvas>
+        <canvas id="zoomCanvas" width="600" height="240"></canvas>
     </div>
 
     <div>
         <button onclick="startCamera()">📷 開啟鏡頭</button>
         <button id="captureBtn" onclick="freezeImage()" disabled class="orange">📸 定格畫面</button>
-        <button id="retakeBtn" onclick="unfreezeImage()" style="display:none;" class="red">🔄 重拍</button>
+        <button id="retakeBtn" onclick="unfreezeImage()" style="display:none;" class="red">🔄 重拍/取消定格</button>
         <button id="ocrBtn" onclick="runOCR()" style="display:none;" class="green">🔍 辨識框內品號</button>
         <button id="clearBoxBtn" onclick="resetBox()" style="display:none;" class="gray">清空框</button>
     </div>
@@ -216,30 +217,16 @@
                 });
                 video.srcObject = stream;
                 captureBtn.disabled = false;
-                status.innerHTML = "對準品號後按下「📸 定格畫面」";
+                status.innerHTML = "請對準品號後按下「📸 定格畫面」";
             } catch (e) {
                 alert("無法開啟鏡頭：" + e.message);
             }
         }
 
-        // 2. 定格畫面 (等比例裁切繪製至 1200x800 Canvas)
+        // 2. 精確 1200x800 定格（完全覆蓋相機視角）
         function freezeImage() {
-            const vw = video.videoWidth || 1920;
-            const vh = video.videoHeight || 1080;
-            const targetRatio = 1200 / 800;
-            const videoRatio = vw / vh;
-
-            let sx, sy, sw, sh;
-            if (videoRatio > targetRatio) {
-                sh = vh; sw = vh * targetRatio;
-                sx = (vw - sw) / 2; sy = 0;
-            } else {
-                sw = vw; sh = vw / targetRatio;
-                sx = 0; sy = (vh - sh) / 2;
-            }
-
             freezeCtx.clearRect(0, 0, 1200, 800);
-            freezeCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 1200, 800);
+            freezeCtx.drawImage(video, 0, 0, 1200, 800);
 
             freezeCanvas.style.display = "block";
             freezeDone = true;
@@ -249,7 +236,7 @@
             ocrBtn.style.display = "inline-block";
             clearBoxBtn.style.display = "inline-block";
 
-            status.innerHTML = "畫面已定格！請用手指在畫面上劃出或拖曳綠框框選品號";
+            status.innerHTML = "畫面已定格！可在螢幕上點擊或拖曳移動綠框";
             createDefaultBox();
         }
 
@@ -282,16 +269,17 @@
         }
 
         // ===============================
-        // 畫框、拖曳、縮放與座標轉換
+        // 修正版：100% 精確座標對齊算法
         // ===============================
         function getCanvasPosition(e) {
             const rect = boxCanvas.getBoundingClientRect();
             let clientX = e.touches ? e.touches[0].clientX : e.clientX;
             let clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
+            // 將畫面上顯示的實際 CSS 像素，嚴格換算成 1200x800 的邏輯像素
             return {
-                x: (clientX - rect.left) * (1200 / rect.width),
-                y: (clientY - rect.top) * (800 / rect.height)
+                x: Math.round((clientX - rect.left) * (1200 / rect.width)),
+                y: Math.round((clientY - rect.top) * (800 / rect.height))
             };
         }
 
@@ -305,19 +293,18 @@
             if (!selectedBox) return false;
             let rx = selectedBox.x + selectedBox.w;
             let ry = selectedBox.y + selectedBox.h;
-            return Math.abs(pos.x - rx) < 60 && Math.abs(pos.y - ry) < 60;
+            return Math.abs(pos.x - rx) < 70 && Math.abs(pos.y - ry) < 70;
         }
 
         let dragging = false;
         let resizing = false;
         let dragOffset = { x: 0, y: 0 };
-        let startPos = null;
 
         function redrawBox() {
             boxCtx.clearRect(0, 0, 1200, 800);
             if (!selectedBox) return;
 
-            // 畫框
+            // 繪製選取綠框
             boxCtx.strokeStyle = "#00ff00";
             boxCtx.lineWidth = 6;
             boxCtx.strokeRect(selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h);
@@ -330,7 +317,6 @@
         function handleStart(e) {
             if (!freezeDone) return;
             let pos = getCanvasPosition(e);
-            startPos = pos;
 
             if (nearResizePoint(pos)) {
                 resizing = true;
@@ -339,9 +325,11 @@
                 dragOffset.x = pos.x - selectedBox.x;
                 dragOffset.y = pos.y - selectedBox.y;
             } else {
-                // 點擊空白處，重新拉一個框
-                selectedBox = { x: pos.x, y: pos.y, w: 10, h: 10 };
+                // 點擊空白處直接重新拉新框
+                selectedBox = { x: pos.x, y: pos.y, w: 300, h: 120 };
                 resizing = true;
+                redrawBox();
+                updateZoom();
             }
         }
 
@@ -375,11 +363,10 @@
         boxCanvas.addEventListener("touchmove", (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
         boxCanvas.addEventListener("touchend", handleEnd);
 
-        // 放大鏡
+        // 精確放大鏡預覽
         const zoomBox = document.getElementById("zoomBox");
         const zoomCanvas = document.getElementById("zoomCanvas");
         const zoomCtx = zoomCanvas.getContext("2d");
-        zoomCanvas.width = 600; zoomCanvas.height = 240;
 
         function updateZoom() {
             if (!selectedBox || !freezeDone) {
@@ -388,7 +375,13 @@
             }
             zoomBox.style.display = "block";
             zoomCtx.clearRect(0, 0, 600, 240);
-            zoomCtx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, 600, 240);
+            
+            // 完美 1:1 抓取與放大鏡繪製
+            zoomCtx.drawImage(
+                freezeCanvas, 
+                selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 
+                0, 0, 600, 240
+            );
         }
 
         function getCropCanvas(preprocess = false) {
@@ -397,7 +390,12 @@
             crop.width = selectedBox.w;
             crop.height = selectedBox.h;
             let ctx = crop.getContext("2d");
-            ctx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, selectedBox.w, selectedBox.h);
+            
+            ctx.drawImage(
+                freezeCanvas, 
+                selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 
+                0, 0, selectedBox.w, selectedBox.h
+            );
 
             if (preprocess) {
                 preprocessCropImage(crop);
@@ -405,7 +403,7 @@
             return crop;
         }
 
-        // 二值化預處理
+        // 二值化圖像強化
         function preprocessCropImage(canvas) {
             const ctx = canvas.getContext("2d");
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -464,16 +462,12 @@
                     load_system_dawg: '0', load_freq_dawg: '0'
                 });
 
-                // A. 原圖辨識
                 const resRaw = await worker.recognize(rawCrop);
-                let textRaw = resRaw.data.text.trim();
-                let cleanRaw = textRaw.replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
+                let cleanRaw = resRaw.data.text.trim().replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
                 if (cleanRaw) ocrCandidates.push({ code: cleanRaw, score: Math.round(resRaw.data.confidence), isBarcode: false });
 
-                // B. 二值化圖辨識
                 const resProcessed = await worker.recognize(processedCrop);
-                let textProc = resProcessed.data.text.trim();
-                let cleanProc = textProc.replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
+                let cleanProc = resProcessed.data.text.trim().replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
                 if (cleanProc && !ocrCandidates.find(c => c.code === cleanProc)) {
                     ocrCandidates.push({ code: cleanProc, score: Math.round(resProcessed.data.confidence), isBarcode: false });
                 }
@@ -483,7 +477,7 @@
                 if (cleanRaw) generateSimilarCandidates(cleanRaw);
 
             } catch (e) {
-                status.innerHTML = "OCR 辨識發生錯誤：" + e.message;
+                status.innerHTML = "OCR 辨識錯誤：" + e.message;
             }
 
             showOCRResults();
