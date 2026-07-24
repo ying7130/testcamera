@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V2.7</title>
-    <!-- 載入 Tesseract.js OCR 庫 -->
+    <title>門市品號辨識系統 V2.9</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
@@ -86,11 +85,11 @@
         #zoomCanvas { width: 100%; height: 100%; }
 
         button {
-            padding: 10px 16px;
-            margin: 4px;
+            padding: 8px 14px;
+            margin: 3px;
             border: none;
             border-radius: 5px;
-            font-size: 15px;
+            font-size: 14px;
             background: #007bff;
             color: white;
             font-weight: bold;
@@ -102,6 +101,7 @@
         .orange { background: #ff9800; }
         .gray { background: #6c757d; }
         .red { background: #dc3545; }
+        .purple { background: #6f42c1; }
 
         #status { font-weight: bold; margin: 10px; color: #333; font-size: 14px; }
 
@@ -126,7 +126,6 @@
             text-align: center;
         }
 
-        /* 候選品號按鈕基礎樣式 */
         .result-item {
             padding: 12px;
             margin: 6px 0;
@@ -139,29 +138,73 @@
             transition: all 0.2s ease;
         }
 
-        /* 被點選/選取時的高亮外框視覺效果 */
         .result-item.selected {
             background: #e7f1ff;
             border-color: #007bff;
             box-shadow: 0 0 5px rgba(0, 123, 255, 0.4);
             color: #0056b3;
         }
+
+        /* 旋轉與微調控制面板 */
+        .transform-controls {
+            margin: 10px auto;
+            max-width: 900px;
+            padding: 10px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .slider-group input[type=range] {
+            width: 50%;
+        }
     </style>
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V2.7</h2>
+    <h2>門市品號辨識系統 V2.9</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
-    <!-- 第一階段取景區域 -->
     <div id="cameraBox" class="camera-area">
         <video id="video" autoplay playsinline></video>
         <canvas id="freezeCanvas" class="layer" width="1200" height="800"></canvas>
         <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
     </div>
 
-    <!-- 放大鏡 -->
+    <div id="transformBar" class="transform-controls">
+        <div class="slider-group">
+            <span style="font-weight:bold; font-size:14px;">旋轉角度:</span>
+            <button onclick="stepRotate(-1)" class="purple">-1°</button>
+            <input type="range" id="rotateSlider" min="-180" max="180" value="0" oninput="onRotateSliderChange(this.value)">
+            <button onclick="stepRotate(1)" class="purple">+1°</button>
+            <span id="degVal" style="font-weight:bold; min-width:40px;">0°</span>
+        </div>
+        <div>
+            <button onclick="stepRotate(-90)" class="purple">↶ -90°</button>
+            <button onclick="stepRotate(90)" class="purple">↷ +90°</button>
+            <button onclick="zoomImage(1.15)" class="purple">🔍 放大</button>
+            <button onclick="zoomImage(0.85)" class="purple">🔍 縮小</button>
+            <button onclick="resetImageTransform()" class="gray">重置圖像</button>
+        </div>
+        <div style="margin-top: 5px;">
+            <span style="font-size:13px; color:#666;">位置微調: </span>
+            <button onclick="moveOffset(0, -30)" class="gray">⬆ 上</button>
+            <button onclick="moveOffset(0, 30)" class="gray">⬇ 下</button>
+            <button onclick="moveOffset(-30, 0)" class="gray">⬅ 左</button>
+            <button onclick="moveOffset(30, 0)" class="gray">➡ 右</button>
+        </div>
+    </div>
+
     <div id="zoomBox">
         <canvas id="zoomCanvas" width="600" height="240"></canvas>
     </div>
@@ -176,7 +219,6 @@
 
     <div id="status">請點擊「開啟鏡頭」</div>
 
-    <!-- 結果選單 -->
     <div id="resultPanel">
         <h3 style="margin-top:0;">確認品號</h3>
         <div id="results"></div>
@@ -185,7 +227,6 @@
         <button onclick="confirmCode()" class="green" style="width:100%; font-size:18px;">確認品號 ➔ 下一步</button>
     </div>
 
-    <!-- 第二階段：產品拍照與定格區域 -->
     <div id="productBox" class="product-area" style="display:none">
         <video id="productVideo" autoplay playsinline></video>
         <canvas id="productFreezeCanvas" class="layer" width="284" height="257"></canvas>
@@ -197,12 +238,16 @@
         <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
     </div>
 
+    <canvas id="rawSnapshotCanvas" width="1200" height="800" style="display:none;"></canvas>
     <canvas id="productCanvas" width="284" height="257" style="display:none;"></canvas>
 
     <script>
         const video = document.getElementById("video");
         const freezeCanvas = document.getElementById("freezeCanvas");
         const freezeCtx = freezeCanvas.getContext("2d");
+
+        const rawSnapshotCanvas = document.getElementById("rawSnapshotCanvas");
+        const rawSnapshotCtx = rawSnapshotCanvas.getContext("2d");
 
         const boxCanvas = document.getElementById("boxCanvas");
         const boxCtx = boxCanvas.getContext("2d");
@@ -212,12 +257,21 @@
         const retakeBtn = document.getElementById("retakeBtn");
         const ocrBtn = document.getElementById("ocrBtn");
         const clearBoxBtn = document.getElementById("clearBoxBtn");
+        const transformBar = document.getElementById("transformBar");
+        const rotateSlider = document.getElementById("rotateSlider");
+        const degVal = document.getElementById("degVal");
 
         let stream = null;
         let freezeDone = false;
         let selectedBox = null;
         let confirmedCode = "";
         let barcodeDetector = null;
+
+        // 微調矩陣狀態變數
+        let imgRotation = 0; // 支援 -180 ~ +180 任意角度
+        let imgScale = 1.0;
+        let offsetX = 0;
+        let offsetY = 0;
 
         if ('BarcodeDetector' in window) {
             try {
@@ -254,8 +308,10 @@
                 sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh) / 2;
             }
 
-            freezeCtx.clearRect(0, 0, 1200, 800);
-            freezeCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 1200, 800);
+            rawSnapshotCtx.clearRect(0, 0, 1200, 800);
+            rawSnapshotCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 1200, 800);
+
+            resetImageTransform();
 
             freezeCanvas.style.display = "block";
             freezeDone = true;
@@ -264,9 +320,65 @@
             retakeBtn.style.display = "inline-block";
             ocrBtn.style.display = "inline-block";
             clearBoxBtn.style.display = "inline-block";
+            transformBar.style.display = "block";
 
-            status.innerHTML = "畫面已完全定格！請用手指移動綠框對準品號";
+            status.innerHTML = "畫面已定格！滑動旋轉或縮放調整，再畫綠框辨識";
             createDefaultBox();
+        }
+
+        // 高階矩陣變換重繪底圖 (支援任意角度與平移)
+        function renderTransformedImage() {
+            freezeCtx.clearRect(0, 0, 1200, 800);
+            freezeCtx.save();
+
+            // 1. 移動至中心
+            freezeCtx.translate(600 + offsetX, 400 + offsetY);
+            // 2. 任意角度旋轉
+            freezeCtx.rotate((imgRotation * Math.PI) / 180);
+            // 3. 縮放
+            freezeCtx.scale(imgScale, imgScale);
+
+            freezeCtx.drawImage(rawSnapshotCanvas, -600, -400);
+            freezeCtx.restore();
+
+            updateZoom();
+        }
+
+        function onRotateSliderChange(val) {
+            imgRotation = parseInt(val);
+            degVal.innerText = imgRotation + "°";
+            renderTransformedImage();
+        }
+
+        function stepRotate(deg) {
+            imgRotation = (imgRotation + deg) % 360;
+            if (imgRotation > 180) imgRotation -= 360;
+            if (imgRotation < -180) imgRotation += 360;
+
+            rotateSlider.value = imgRotation;
+            degVal.innerText = imgRotation + "°";
+            renderTransformedImage();
+        }
+
+        function zoomImage(factor) {
+            imgScale = Math.min(Math.max(0.4, imgScale * factor), 4.0);
+            renderTransformedImage();
+        }
+
+        function moveOffset(dx, dy) {
+            offsetX += dx;
+            offsetY += dy;
+            renderTransformedImage();
+        }
+
+        function resetImageTransform() {
+            imgRotation = 0;
+            imgScale = 1.0;
+            offsetX = 0;
+            offsetY = 0;
+            rotateSlider.value = 0;
+            degVal.innerText = "0°";
+            renderTransformedImage();
         }
 
         function unfreezeImage() {
@@ -279,6 +391,7 @@
             retakeBtn.style.display = "none";
             ocrBtn.style.display = "none";
             clearBoxBtn.style.display = "none";
+            transformBar.style.display = "none";
             document.getElementById("resultPanel").style.display = "none";
 
             status.innerHTML = "已恢復即時畫面，請重新對準品號定格";
@@ -515,7 +628,6 @@
             });
         }
 
-        // 顯示候選清單，並新增點選高亮外框的控制邏輯
         function showOCRResults() {
             let panel = document.getElementById("resultPanel");
             let results = document.getElementById("results");
@@ -528,17 +640,14 @@
                 ocrCandidates.forEach((item, index) => {
                     let div = document.createElement("div");
                     div.className = "result-item";
-                    if (index === 0) div.classList.add("selected"); // 預設選擇第一個
+                    if (index === 0) div.classList.add("selected");
 
                     let tag = item.isBarcode ? " <span style='color:red;'>[條碼]</span>" : "";
                     div.innerHTML = `${formatDisplayCode(item.code)}${tag} <br><small style='color:#666;'>信心值：${item.score}%</small>`;
 
                     div.onclick = function () {
-                        // 清除其它選項的選取外框
                         document.querySelectorAll('.result-item').forEach(el => el.classList.remove('selected'));
-                        // 為目前點選的項目加上外框
                         div.classList.add('selected');
-                        // 將數值帶入輸入框
                         document.getElementById("manualCode").value = formatDisplayCode(item.code);
                     };
                     results.appendChild(div);
@@ -561,6 +670,7 @@
             document.getElementById("resultPanel").style.display = "none";
             document.getElementById("cameraBox").style.display = "none";
             document.getElementById("zoomBox").style.display = "none";
+            transformBar.style.display = "none";
             
             document.getElementById("productBox").style.display = "block";
             document.getElementById("takeProductBtn").style.display = "inline-block";
@@ -639,48 +749,4 @@
             for (let i = 0; i < bytes.length - 9; i++) {
                 if (bytes[i] === 0xFF && bytes[i + 1] === 0xE0) {
                     bytes[i + 11] = 1;
-                    bytes[i + 12] = (dpi >> 8) & 255;
-                    bytes[i + 13] = dpi & 255;
-                    bytes[i + 14] = (dpi >> 8) & 255;
-                    bytes[i + 15] = dpi & 255;
-                    break;
-                }
-            }
-            let result = "";
-            bytes.forEach(b => { result += String.fromCharCode(b); });
-            return "data:image/jpeg;base64," + btoa(result);
-        }
-
-        function saveImage() {
-            let raw = productCanvas.toDataURL("image/jpeg", 0.95);
-            let finalImage = setJpegDpi(raw, 72);
-            let filename = confirmedCode + ".jpg";
-
-            let link = document.createElement("a");
-            link.href = finalImage;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            alert("已存檔：" + filename);
-            resetSystem();
-        }
-
-        function resetSystem() {
-            confirmedCode = "";
-            unfreezeImage();
-            retakeProductPhoto();
-
-            document.getElementById("productBox").style.display = "none";
-            document.getElementById("takeProductBtn").style.display = "none";
-            document.getElementById("retakeProductBtn").style.display = "none";
-            document.getElementById("saveBtn").style.display = "none";
-
-            document.getElementById("cameraBox").style.display = "block";
-            document.getElementById("stepTitle").innerHTML = "第一階段：品號辨識";
-            status.innerHTML = "已回到第一階段，請開啟鏡頭開始下一筆";
-        }
-    </script>
-</body>
-</html>
+                    bytes[i + 12] = (dpi >> 8
