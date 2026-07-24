@@ -32,7 +32,7 @@
             margin: 15px auto;
             position: relative;
             overflow: hidden;
-            border: 3px solid #ff9800; /* 橘框代表 3.5:1.5 辨識模式 */
+            border: 3px solid #ff9800; /* 橘框代表辨識模式 */
             border-radius: 8px;
             background-color: #000;
         }
@@ -55,6 +55,18 @@
             object-fit: cover;
         }
 
+        /* 定格預覽圖 (蓋在 Video 上) */
+        #freezePreview {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 10;
+        }
+
         button { 
             padding: 10px 20px; 
             font-size: 16px; 
@@ -67,6 +79,7 @@
         }
         button:disabled { background-color: #ccc; }
         .btn-green { background-color: #28a745; }
+        .btn-orange { background-color: #ff9800; }
         
         #status { font-weight: bold; margin: 10px; color: #333; }
         
@@ -123,12 +136,19 @@
     <!-- 視訊取景容器 -->
     <div id="cameraBox" class="camera-container-step1">
         <video id="webcam" class="webcam-video" autoplay playsinline></video>
+        <!-- 拍攝定格用的 Canvas (蓋在 Video 上) -->
+        <canvas id="freezePreview" width="284" height="257"></canvas>
     </div>
     
     <div>
         <button id="startBtn" onclick="initCamera()">📷 開啟鏡頭</button>
+        <!-- 階段 1 按鈕 -->
         <button id="captureOCRBtn" onclick="captureAndRecognize()" disabled>🔍 1. 擷取品號</button>
-        <button id="captureProductBtn" class="btn-green" onclick="captureProductImage()" style="display:none;">📸 2. 拍產品圖並存檔</button>
+        
+        <!-- 階段 2 按鈕群 (動態切換顯示) -->
+        <button id="captureProductBtn" class="btn-green" onclick="shootProductImage()" style="display:none;">📸 2. 拍產品圖</button>
+        <button id="retakeBtn" class="btn-orange" onclick="resetToStep2Camera()" style="display:none;">🔄 重拍</button>
+        <button id="saveBtn" class="btn-green" onclick="confirmSaveAndReset()" style="display:none;">💾 確認存檔</button>
     </div>
     
     <div id="status">請點擊「開啟鏡頭」</div>
@@ -154,9 +174,13 @@
         const cameraBox = document.getElementById('cameraBox');
         const stepBadge = document.getElementById('stepBadge');
         const statusDiv = document.getElementById('status');
+        const freezePreview = document.getElementById('freezePreview');
+        const freezeCtx = freezePreview.getContext('2d');
         
         const captureOCRBtn = document.getElementById('captureOCRBtn');
         const captureProductBtn = document.getElementById('captureProductBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
+        const saveBtn = document.getElementById('saveBtn');
         
         const selectionPanel = document.getElementById('selectionPanel');
         const optionsContainer = document.getElementById('optionsContainer');
@@ -168,8 +192,9 @@
         const productCtx = productCanvas.getContext('2d');
 
         let confirmedFileName = "";
+        let capturedBase64Data = ""; // 暫存定格時處理好的 72 DPI Base64 圖片
 
-        // 1. 初始化鏡頭 (修正為相容性最高的標準 1080p 參數)
+        // 1. 初始化鏡頭
         async function initCamera() {
             statusDiv.innerText = "正在啟動鏡頭...";
             try {
@@ -186,7 +211,6 @@
                 statusDiv.innerText = "請將品號對準 3.5:1.5 橘色視窗，點擊「擷取品號」";
             } catch (err) {
                 try {
-                    // 備用開啟方案
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: "environment" }, 
                         audio: false 
@@ -196,12 +220,12 @@
                     statusDiv.innerText = "已啟用鏡頭，請對準視窗";
                 } catch (e) {
                     statusDiv.innerText = "無法開啟鏡頭：" + e.message;
-                    alert("鏡頭開啟失敗！請確認：\n1. 網址開頭為 https://\n2. 瀏覽器有開啟相機權限\n錯誤訊息：" + e.message);
+                    alert("鏡頭開啟失敗！請檢查是否使用 https:// 網址及相機權限。\n錯誤訊息：" + e.message);
                 }
             }
         }
 
-        // 2. 第一階段：原始解析度 AI 辨識
+        // 2. 第一階段：原始解析度全像素 AI 辨識
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
@@ -286,18 +310,26 @@
             selectionPanel.style.display = "none";
             captureOCRBtn.style.display = "none";
             
+            // 切換至第二階段取景框 (284x257)
             cameraBox.className = "camera-container-step2";
             stepBadge.innerText = `第二階段：拍攝產品圖 (品號：${confirmedFileName})`;
             stepBadge.style.backgroundColor = "#28a745";
             
-            captureProductBtn.style.display = "inline-block";
-            statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框拍攝產品圖`;
+            resetToStep2Camera(); // 初始化第二階段拍照按鈕狀態
+            statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框，點擊「拍產品圖」`;
         }
 
-        // 5. 第二階段：中心裁切不變形拍產品圖 (284x257 & 72 DPI)
-        function captureProductImage() {
-            statusDiv.innerText = "正在處理 284x257 (72 DPI) 圖片...";
+        // 重置為第二階段即時畫面狀態 (重拍時也會呼叫這個)
+        function resetToStep2Camera() {
+            freezePreview.style.display = "none"; // 藏起定格畫面
+            captureProductBtn.style.display = "inline-block";
+            retakeBtn.style.display = "none";
+            saveBtn.style.display = "none";
+            statusDiv.innerText = `請對準綠框，按下「📸 2. 拍產品圖」`;
+        }
 
+        // 5. 按下「📸 2. 拍產品圖」：照片定格凍結 + 生成 284x257 不變形圖檔
+        function shootProductImage() {
             const targetWidth = 284;
             const targetHeight = 257;
             const videoWidth = video.videoWidth || 1280;
@@ -320,18 +352,63 @@
                 sy = (videoHeight - sHeight) / 2;
             }
 
+            // A. 在隱藏 Canvas 上製作精確 284x257 中心裁切圖
             productCtx.clearRect(0, 0, targetWidth, targetHeight);
             productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
+            // B. 將處理好的影像複製到定格預覽 Canvas (覆蓋在視訊上，讓使用者看到畫面上鎖)
+            freezePreview.style.display = "block";
+            freezeCtx.clearRect(0, 0, targetWidth, targetHeight);
+            freezeCtx.drawImage(productCanvas, 0, 0);
+
+            // C. 寫入 72 DPI 標頭並儲存 Base64 資料
             const rawDataURL = productCanvas.toDataURL('image/jpeg', 0.95);
-            const finalImageBase64 = setJpegDpi(rawDataURL, 72);
+            capturedBase64Data = setJpegDpi(rawDataURL, 72);
 
-            downloadImageToMobile(finalImageBase64, confirmedFileName + ".jpg");
+            // D. 切換按鈕：隱藏拍照鈕，顯示「重拍」與「確認存檔」
+            captureProductBtn.style.display = "none";
+            retakeBtn.style.display = "inline-block";
+            saveBtn.style.display = "inline-block";
 
-            statusDiv.innerText = `下載完成！完美裁切不變形：${confirmedFileName}.jpg (284x257, 72 DPI)`;
+            statusDiv.innerText = "畫面已定格！確認無誤請按「確認存檔」，或按「重拍」";
         }
 
-        // 6. 下載圖片至手機
+        // 6. 按下「💾 確認存檔」：觸發下載並自動重置回到第一階段 (辨識新品號)
+        function confirmSaveAndReset() {
+            if (!capturedBase64Data) return;
+
+            // 觸發下載
+            downloadImageToMobile(capturedBase64Data, confirmedFileName + ".jpg");
+
+            alert(`已下載：${confirmedFileName}.jpg！即將回到第一階段拍攝新品號。`);
+
+            // 自動重置切換回第一階段
+            resetToStep1();
+        }
+
+        // 自動重置回第一階段 (辨識新品號)
+        function resetToStep1() {
+            confirmedFileName = "";
+            capturedBase64Data = "";
+            manualInput.value = "";
+
+            // 隱藏定格與階段 2 按鈕
+            freezePreview.style.display = "none";
+            captureProductBtn.style.display = "none";
+            retakeBtn.style.display = "none";
+            saveBtn.style.display = "none";
+            selectionPanel.style.display = "none";
+
+            // 切換回階段 1 的橘框 (3.5:1.5) 與顯示階段 1 按鈕
+            cameraBox.className = "camera-container-step1";
+            stepBadge.innerText = "第一階段：拍攝並辨識品號 (3.5:1.5 視窗)";
+            stepBadge.style.backgroundColor = "#007bff";
+            captureOCRBtn.style.display = "inline-block";
+
+            statusDiv.innerText = "已回到第一階段，請將下一個品號對準橘色視窗";
+        }
+
+        // 7. 下載圖片至手機
         function downloadImageToMobile(base64Data, fileName) {
             const link = document.createElement('a');
             link.href = base64Data;
@@ -341,12 +418,12 @@
             document.body.removeChild(link);
         }
 
-        // 7. 全形轉換
+        // 8. 全形轉換
         function toFullWidth(str) {
             return str.replace(/[\u0021-\u007E]/g, s => String.fromCharCode(s.charCodeAt(0) + 0xFEE0));
         }
 
-        // 8. 寫入 72 DPI Header
+        // 9. 寫入 72 DPI Header
         function setJpegDpi(base64Image, dpi) {
             const byteString = atob(base64Image.split(',')[1]);
             const buffer = new Uint8Array(byteString.length);
