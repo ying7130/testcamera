@@ -25,11 +25,11 @@
             margin-bottom: 10px;
         }
 
-        /* 階段 1 取景框：1200x500 比例 (支援手機寬度自適應) */
+        /* 階段 1 取景框：1200x800 比例 (3:2 比例，支援手機寬度自適應) */
         .camera-container-step1 {
             width: 100%;
             max-width: 1200px;
-            aspect-ratio: 1200 / 500;
+            aspect-ratio: 1200 / 800;
             margin: 15px auto;
             position: relative;
             overflow: hidden;
@@ -132,7 +132,7 @@
 <body>
 
     <h2>門市產品辨識系統</h2>
-    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號 (1200x500 視窗)</div>
+    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號 (1200x800 視窗)</div>
 
     <!-- 視訊取景容器 -->
     <div id="cameraBox" class="camera-container-step1">
@@ -209,7 +209,7 @@
                 });
                 video.srcObject = stream;
                 captureOCRBtn.disabled = false;
-                statusDiv.innerText = "請將品號對準 1200x500 橘色視窗，點擊「擷取品號」";
+                statusDiv.innerText = "請將品號對準 1200x800 橘色視窗，點擊「擷取品號」";
             } catch (err) {
                 try {
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
@@ -226,7 +226,7 @@
             }
         }
 
-        // 2. 第一階段：精確橘框裁切 (1200:500) + 智慧黑白反相處理 AI 辨識
+        // 2. 第一階段：精確橘框裁切 (1200:800) + 智慧黑白反相處理 AI 辨識
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
@@ -236,8 +236,8 @@
             const vWidth = video.videoWidth || 1920;
             const vHeight = video.videoHeight || 1080;
 
-            // 計算 1200:500 (2.4) 橘框在影像中的精確裁切範圍
-            const boxAspect = 1200 / 500;
+            // 計算 1200:800 (1.5) 橘框在影像中的精確裁切範圍
+            const boxAspect = 1200 / 800;
             const videoAspect = vWidth / vHeight;
 
             let cropW, cropH, cropX, cropY;
@@ -448,7 +448,7 @@
             selectionPanel.style.display = "none";
 
             cameraBox.className = "camera-container-step1";
-            stepBadge.innerText = "第一階段：拍攝並辨識品號 (1200x500 視窗)";
+            stepBadge.innerText = "第一階段：拍攝並辨識品號 (1200x800 視窗)";
             stepBadge.style.backgroundColor = "#007bff";
             captureOCRBtn.style.display = "inline-block";
 
