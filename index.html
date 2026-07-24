@@ -25,7 +25,7 @@
             margin-bottom: 10px;
         }
 
-        /* 階段 1 取景框：1200x800 比例 (3:2 比例，支援手機寬度自適應) */
+        /* 階段 1 取景框：1200x800 比例 */
         .camera-container-step1 {
             width: 100%;
             max-width: 1200px;
@@ -111,6 +111,12 @@
             background: #e2e6ea; 
             border-color: #007bff;
         }
+        .barcode-tag {
+            color: #d9534f;
+            font-size: 12px;
+            font-weight: normal;
+            margin-left: 5px;
+        }
         .custom-input-group {
             margin-top: 15px;
             padding-top: 10px;
@@ -132,7 +138,7 @@
 <body>
 
     <h2>門市產品辨識系統</h2>
-    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號 (1200x800 視窗)</div>
+    <div id="stepBadge" class="step-badge">第一階段：拍攝並辨識品號/條碼 (1200x800 視窗)</div>
 
     <!-- 視訊取景容器 -->
     <div id="cameraBox" class="camera-container-step1">
@@ -144,7 +150,7 @@
     <div>
         <button id="startBtn" onclick="initCamera()">📷 開啟鏡頭</button>
         <!-- 階段 1 按鈕 -->
-        <button id="captureOCRBtn" onclick="captureAndRecognize()" disabled>🔍 1. 擷取品號</button>
+        <button id="captureOCRBtn" onclick="captureAndRecognize()" disabled>🔍 1. 擷取品號 / 掃條碼</button>
         
         <!-- 階段 2 按鈕群 -->
         <button id="captureProductBtn" class="btn-green" onclick="shootProductImage()" style="display:none;">📸 2. 拍產品圖</button>
@@ -209,7 +215,7 @@
                 });
                 video.srcObject = stream;
                 captureOCRBtn.disabled = false;
-                statusDiv.innerText = "請將品號對準 1200x800 橘色視窗，點擊「擷取品號」";
+                statusDiv.innerText = "請將品號或條碼對準 1200x800 橘色視窗，點擊「擷取品號 / 掃條碼」";
             } catch (err) {
                 try {
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ 
@@ -226,17 +232,16 @@
             }
         }
 
-        // 2. 第一階段：精確橘框裁切 (1200:800) + 智慧黑白反相處理 AI 辨識
+        // 2. 第一階段：雙重辨識 (條碼掃描 + 文字 OCR)
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
             manualInput.value = "";
-            statusDiv.innerText = "正在讀取橘框影像並優化黑白對比...";
+            statusDiv.innerText = "正在掃描條碼與進行文字辨識...";
 
             const vWidth = video.videoWidth || 1920;
             const vHeight = video.videoHeight || 1080;
 
-            // 計算 1200:800 (1.5) 橘框在影像中的精確裁切範圍
             const boxAspect = 1200 / 800;
             const videoAspect = vWidth / vHeight;
 
@@ -257,19 +262,39 @@
             ocrCanvas.height = cropH;
             ocrCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
+            let candidates = [];
+
+            // --- A. 先執行「條碼掃描 (Barcode / QR Code)」---
+            if ('BarcodeDetector' in window) {
+                try {
+                    const barcodeDetector = new BarcodeDetector();
+                    const barcodes = await barcodeDetector.detect(ocrCanvas);
+                    barcodes.forEach(barcode => {
+                        let val = barcode.rawValue.trim().toUpperCase();
+                        if (val && !candidates.includes(val)) {
+                            candidates.push(val);
+                        }
+                    });
+                } catch (e) {
+                    console.log("Barcode detection error or unsupported:", e);
+                }
+            }
+
+            // --- B. 執行「文字 OCR 辨識」---
             preprocessImageForOCR(ocrCtx, cropW, cropH);
 
             try {
                 const worker = await Tesseract.createWorker('eng');
                 await worker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/*',
-                    tessedit_pageseg_mode: '6',
+                    tessedit_pageseg_mode: '7',
+                    load_system_dawg: '0',
+                    load_freq_dawg: '0',
                 });
 
                 const { data: { lines } } = await worker.recognize(ocrCanvas);
                 await worker.terminate();
 
-                let candidates = [];
                 lines.forEach(line => {
                     let clean = line.text.replace(/[^A-Za-z0-9\/*-]/g, '').toUpperCase();
                     if (clean.length >= 3 && /[A-Z0-9]/.test(clean) && !candidates.includes(clean)) {
@@ -278,7 +303,7 @@
                 });
 
                 if (candidates.length === 0) {
-                    statusDiv.innerText = "未辨識出有效品號，請手動輸入：";
+                    statusDiv.innerText = "未辨識出有效品號或條碼，請手動輸入：";
                     showSelectionPanel([]);
                     return;
                 }
@@ -448,7 +473,7 @@
             selectionPanel.style.display = "none";
 
             cameraBox.className = "camera-container-step1";
-            stepBadge.innerText = "第一階段：拍攝並辨識品號 (1200x800 視窗)";
+            stepBadge.innerText = "第一階段：拍攝並辨識品號/條碼 (1200x800 視窗)";
             stepBadge.style.backgroundColor = "#007bff";
             captureOCRBtn.style.display = "inline-block";
 
