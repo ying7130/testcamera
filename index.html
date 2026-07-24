@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V3.3</title>
+    <title>門市品號辨識系統 V3.4</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -38,7 +38,7 @@
             background: black;
             border: 3px solid #ff9800;
             border-radius: 8px;
-            touch-action: none; /* 阻止瀏覽器預設捲動與縮放 */
+            touch-action: none;
         }
 
         /* 第二階段 284x257 產品拍照容器 */
@@ -136,6 +136,7 @@
             border-radius: 6px;
             text-align: left;
             font-weight: bold;
+            font-size: 16px;
             transition: all 0.2s ease;
         }
 
@@ -171,7 +172,7 @@
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V3.3</h2>
+    <h2>門市品號辨識系統 V3.4</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
@@ -260,20 +261,17 @@
         let confirmedCode = "";
         let barcodeDetector = null;
 
-        // 圖片變換矩陣狀態
         let imgRotation = 0;
         let imgScale = 1.0;
         let imgOffsetX = 0;
         let imgOffsetY = 0;
 
-        // 手勢操控變數 (單指平移、雙指旋轉與捏合縮放)
         let isDragBox = false;
         let isResizeBox = false;
         let isDragImage = false;
         let touchStartPos = { x: 0, y: 0 };
         let boxDragOffset = { x: 0, y: 0 };
         
-        // 雙指手勢紀錄
         let initialPinchDist = 0;
         let initialPinchAngle = 0;
         let initialScale = 1.0;
@@ -453,11 +451,9 @@
             boxCtx.fillRect(selectedBox.x + selectedBox.w - 20, selectedBox.y + selectedBox.h - 20, 40, 40);
         }
 
-        // --- 手勢事件處理：單指拖曳平移，雙指捏合縮放 + 旋轉照片 ---
         function handleStart(e) {
             if (!freezeDone) return;
 
-            // 雙指觸控：同時進行縮放 (Zoom) 與旋轉 (Rotate)
             if (e.touches && e.touches.length === 2) {
                 isDragBox = false;
                 isResizeBox = false;
@@ -487,17 +483,14 @@
         function handleMove(e) {
             if (!freezeDone) return;
 
-            // 處理雙指手勢：同步控制照片縮放與旋轉
             if (e.touches && e.touches.length === 2) {
                 let dist = getTouchDistance(e.touches);
                 let angle = getTouchAngle(e.touches);
 
                 if (initialPinchDist > 0) {
-                    // 1. 縮放計算
                     let scaleFactor = dist / initialPinchDist;
                     imgScale = Math.min(Math.max(0.4, initialScale * scaleFactor), 4.0);
 
-                    // 2. 旋轉角度計算
                     let deltaAngle = angle - initialPinchAngle;
                     let newRot = Math.round(initialRotation + deltaAngle);
                     
@@ -526,7 +519,6 @@
                 redrawBox();
                 updateZoom();
             } else if (isDragImage) {
-                // 單指拖曳平移照片本體
                 let dx = pos.x - touchStartPos.x;
                 let dy = pos.y - touchStartPos.y;
                 imgOffsetX += dx;
@@ -631,7 +623,7 @@
         async function runOCR() {
             if (!selectedBox) { alert("請先劃定品號區域！"); return; }
 
-            status.innerHTML = "正在高清放大並分析品號...";
+            status.innerHTML = "正在分析品號...";
             ocrCandidates = [];
 
             let rawCrop = getCropCanvas(false);
@@ -643,7 +635,7 @@
                     barcodes.forEach(b => {
                         let val = b.rawValue ? b.rawValue.trim().toUpperCase() : "";
                         if (val && !ocrCandidates.find(c => c.code === val)) {
-                            ocrCandidates.push({ code: val, score: 100, isBarcode: true });
+                            ocrCandidates.push({ code: val, isBarcode: true });
                         }
                     });
                 } catch (e) { console.log(e); }
@@ -660,13 +652,13 @@
                 const resRaw = await worker.recognize(rawCrop);
                 let cleanRaw = resRaw.data.text.trim().replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
                 if (cleanRaw && cleanRaw.length >= 3) {
-                    ocrCandidates.push({ code: cleanRaw, score: Math.round(resRaw.data.confidence), isBarcode: false });
+                    ocrCandidates.push({ code: cleanRaw, isBarcode: false });
                 }
 
                 const resProcessed = await worker.recognize(processedCrop);
                 let cleanProc = resProcessed.data.text.trim().replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
                 if (cleanProc && cleanProc.length >= 3 && !ocrCandidates.find(c => c.code === cleanProc)) {
-                    ocrCandidates.push({ code: cleanProc, score: Math.round(resProcessed.data.confidence), isBarcode: false });
+                    ocrCandidates.push({ code: cleanProc, isBarcode: false });
                 }
 
                 await worker.terminate();
@@ -689,11 +681,12 @@
 
             list.forEach(x => {
                 if (!ocrCandidates.find(y => y.code === x)) {
-                    ocrCandidates.push({ code: x, score: 60, isBarcode: false });
+                    ocrCandidates.push({ code: x, isBarcode: false });
                 }
             });
         }
 
+        // 簡化結果顯示（完全移除信心值）
         function showOCRResults() {
             let panel = document.getElementById("resultPanel");
             let results = document.getElementById("results");
@@ -709,7 +702,7 @@
                     if (index === 0) div.classList.add("selected");
 
                     let tag = item.isBarcode ? " <span style='color:red;'>[條碼]</span>" : "";
-                    div.innerHTML = `${formatDisplayCode(item.code)}${tag} <br><small style='color:#666;'>信心值：${item.score}%</small>`;
+                    div.innerHTML = `${formatDisplayCode(item.code)}${tag}`;
 
                     div.onclick = function () {
                         document.querySelectorAll('.result-item').forEach(el => el.classList.remove('selected'));
