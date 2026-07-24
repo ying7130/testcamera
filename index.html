@@ -255,7 +255,6 @@
             ocrCanvas.height = cropH;
             ocrCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            // 智慧預處理（支援黑底白字與白底黑字，統一轉為純白底黑字）
             preprocessImageForOCR(ocrCtx, cropW, cropH);
 
             try {
@@ -304,17 +303,15 @@
             }
             
             const avgBrightness = totalBrightness / pixelCount;
-            const isDarkBackground = avgBrightness < 128; // 低於 128 判定為黑底
+            const isDarkBackground = avgBrightness < 128;
 
             for (let i = 0; i < data.length; i += 4) {
                 let brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
                 
                 let value;
                 if (isDarkBackground) {
-                    // 黑底白字：亮部分(文字)轉黑(0)，暗部分(背景)轉白(255)
                     value = brightness > 100 ? 0 : 255;
                 } else {
-                    // 白底黑字：暗部分(文字)轉黑(0)，亮部分(背景)轉白(255)
                     value = brightness < 140 ? 0 : 255;
                 }
 
@@ -370,16 +367,17 @@
             statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框，點擊「拍產品圖」`;
         }
 
-        // 重置為第二階段即時畫面狀態
+        // 重置為第二階段即時畫面狀態 (重拍時擦除定格畫面)
         function resetToStep2Camera() {
-            freezePreview.style.display = "none";
+            freezeCtx.clearRect(0, 0, freezePreview.width, freezePreview.height); // 【修復】清空定格畫布
+            freezePreview.style.display = "none"; // 隱藏定格 Canvas，顯露即時 Video
             captureProductBtn.style.display = "inline-block";
             retakeBtn.style.display = "none";
             saveBtn.style.display = "none";
             statusDiv.innerText = `請對準綠框，按下「📸 2. 拍產品圖」`;
         }
 
-        // 5. 第二階段：拍產品圖（畫面定格 + 284x257 不變形中心裁切）
+        // 5. 第二階段：拍產品圖
         function shootProductImage() {
             const targetWidth = 284;
             const targetHeight = 257;
@@ -406,7 +404,9 @@
             productCtx.clearRect(0, 0, targetWidth, targetHeight);
             productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            // 鎖定畫面預覽
+            // 調整定格預覽 Canvas 尺寸並顯示定格畫面
+            freezePreview.width = targetWidth;
+            freezePreview.height = targetHeight;
             freezePreview.style.display = "block";
             freezeCtx.clearRect(0, 0, targetWidth, targetHeight);
             freezeCtx.drawImage(productCanvas, 0, 0);
@@ -432,13 +432,15 @@
             resetToStep1();
         }
 
-        // 自動重置回到第一階段
+        // 自動重置回到第一階段 (徹底恢復相機即時動態)
         function resetToStep1() {
             confirmedFileName = "";
             capturedBase64Data = "";
             manualInput.value = "";
 
-            freezePreview.style.display = "none";
+            freezeCtx.clearRect(0, 0, freezePreview.width, freezePreview.height); // 【修復】清空定格畫布
+            freezePreview.style.display = "none"; // 隱藏定格 Canvas，露出即時 Video
+            
             captureProductBtn.style.display = "none";
             retakeBtn.style.display = "none";
             saveBtn.style.display = "none";
