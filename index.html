@@ -1,2362 +1,670 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>門市品號辨識系統 V2</title>
-
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-<style>
-
-body{
-    font-family:Arial,sans-serif;
-    text-align:center;
-    padding:20px;
-    background:#f5f5f5;
-}
-
-
-h2{
-    margin-bottom:10px;
-}
-
-
-.badge{
-    display:inline-block;
-    padding:8px 18px;
-    background:#007bff;
-    color:white;
-    border-radius:20px;
-    font-weight:bold;
-}
-
-
-/* 第一階段辨識視窗 */
-
-.camera-area{
-
-    width:100%;
-    max-width:900px;
-
-    aspect-ratio:1200/800;
-
-    margin:15px auto;
-
-    position:relative;
-
-    overflow:hidden;
-
-    background:black;
-
-    border:3px solid #ff9800;
-
-    border-radius:8px;
-}
-
-
-/* 第二階段產品拍照 */
-
-.product-area{
-
-    width:284px;
-
-    height:257px;
-
-    margin:15px auto;
-
-    position:relative;
-
-    overflow:hidden;
-
-    background:black;
-
-    border:3px solid #28a745;
-
-    border-radius:8px;
-
-}
-
-
-
-video,
-canvas.layer{
-
-    width:100%;
-    height:100%;
-
-    object-fit:cover;
-
-}
-
-
-
-video{
-
-    position:absolute;
-    left:0;
-    top:0;
-}
-
-
-
-/* 疊加框 */
-
-.layer{
-
-    position:absolute;
-
-    left:0;
-    top:0;
-
-    z-index:5;
-
-}
-
-
-
-/* 定格圖片 */
-
-#freezeCanvas{
-
-    display:none;
-
-    position:absolute;
-
-    left:0;
-    top:0;
-
-    z-index:3;
-
-}
-
-
-
-/* OCR框 */
-
-#boxCanvas{
-
-    z-index:10;
-
-}
-
-
-
-/* 放大鏡 */
-
-#zoomBox{
-
-    display:none;
-
-    width:300px;
-
-    height:120px;
-
-    margin:10px auto;
-
-    border:2px solid #333;
-
-    background:white;
-
-    overflow:hidden;
-
-}
-
-
-
-#zoomCanvas{
-
-    width:100%;
-    height:100%;
-
-}
-
-
-
-button{
-
-    padding:10px 18px;
-
-    margin:5px;
-
-    border:none;
-
-    border-radius:5px;
-
-    font-size:16px;
-
-    background:#007bff;
-
-    color:white;
-
-}
-
-
-
-.green{
-
-    background:#28a745;
-
-}
-
-
-.orange{
-
-    background:#ff9800;
-
-}
-
-
-.gray{
-
-    background:#555;
-
-}
-
-
-
-#status{
-
-    font-weight:bold;
-
-    margin:15px;
-
-}
-
-
-
-#resultPanel{
-
-    max-width:350px;
-
-    margin:auto;
-
-    background:white;
-
-    padding:15px;
-
-    border-radius:8px;
-
-    display:none;
-
-}
-
-
-
-input{
-
-    width:90%;
-
-    padding:10px;
-
-    font-size:18px;
-
-}
-
-
-
-.result-item{
-
-    padding:10px;
-
-    margin:5px;
-
-    background:#eee;
-
-    cursor:pointer;
-
-    border-radius:5px;
-
-}
-
-
-</style>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>門市品號辨識系統 V2</title>
+    <!-- 載入 Tesseract.js OCR 庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        h2 { margin-bottom: 10px; }
+
+        .badge {
+            display: inline-block;
+            padding: 8px 18px;
+            background: #007bff;
+            color: white;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+
+        /* 第一階段辨識視窗 */
+        .camera-area {
+            width: 100%;
+            max-width: 900px;
+            aspect-ratio: 1200 / 800;
+            margin: 15px auto;
+            position: relative;
+            overflow: hidden;
+            background: black;
+            border: 3px solid #ff9800;
+            border-radius: 8px;
+        }
+
+        /* 第二階段產品拍照 */
+        .product-area {
+            width: 284px;
+            height: 257px;
+            margin: 15px auto;
+            position: relative;
+            overflow: hidden;
+            background: black;
+            border: 3px solid #28a745;
+            border-radius: 8px;
+        }
+
+        video, canvas.layer {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        video {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        /* 疊加框與定格圖 */
+        .layer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 5;
+        }
+
+        #freezeCanvas {
+            display: none;
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 3;
+        }
+
+        #boxCanvas { z-index: 10; }
+
+        /* 放大鏡 */
+        #zoomBox {
+            display: none;
+            width: 300px;
+            height: 120px;
+            margin: 10px auto;
+            border: 2px solid #333;
+            background: white;
+            overflow: hidden;
+        }
+
+        #zoomCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        button {
+            padding: 10px 18px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+
+        .green { background: #28a745; }
+        .orange { background: #ff9800; }
+        .gray { background: #555; }
+
+        #status {
+            font-weight: bold;
+            margin: 15px;
+            color: #333;
+        }
+
+        #resultPanel {
+            max-width: 350px;
+            margin: auto;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        input {
+            width: 90%;
+            padding: 10px;
+            font-size: 18px;
+            margin-bottom: 10px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .result-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #eee;
+            cursor: pointer;
+            border-radius: 5px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .result-item:hover, .result-item:active {
+            background: #e2e6ea;
+            border: 1px solid #007bff;
+        }
+    </style>
 </head>
-
-
 <body>
 
-
-<h2>門市品號辨識系統 V2</h2>
-
-
-<div id="stepTitle" class="badge">
-第一階段：品號辨識
-</div>
-
-
-
-<div id="cameraBox" class="camera-area">
-
-
-<video id="video"
-autoplay
-playsinline>
-</video>
-
-
-<canvas id="freezeCanvas"
-width="1200"
-height="800">
-</canvas>
-
-
-<canvas id="boxCanvas"
-class="layer"
-width="1200"
-height="800">
-</canvas>
-
-
-</div>
-
-
-
-<div id="zoomBox">
-
-<canvas id="zoomCanvas"></canvas>
-
-</div>
-
-
-
-<div>
-
-
-<button onclick="startCamera()">
-📷 開啟鏡頭
-</button>
-
-
-<button id="captureBtn"
-onclick="freezeImage()"
-disabled>
-
-🔍 定格辨識
-
-</button>
-
-
-<button id="ocrBtn"
-onclick="runOCR()"
-style="display:none">
-
-AI辨識品號
-
-</button>
-
-
-<button id="clearBoxBtn"
-onclick="resetBox()"
-style="display:none"
-class="gray">
-
-清除框
-
-</button>
-
-
-
-</div>
-
-
-
-<div id="status">
-
-請開啟鏡頭
-
-</div>
-
-
-
-<div id="resultPanel">
-
-<h3>
-品號確認
-</h3>
-
-
-<div id="results"></div>
-
-
-<input id="manualCode"
-placeholder="人工輸入品號">
-
-
-<br>
-
-
-<button onclick="confirmCode()"
-class="green">
-
-確認品號
-
-</button>
-
-
-</div>
-
-
-
-
-
-<!-- 第二階段 -->
-
-<div id="productBox"
-class="product-area"
-style="display:none">
-
-
-<video id="productVideo"
-autoplay
-playsinline>
-</video>
-
-
-<canvas id="productCanvas"
-width="284"
-height="257">
-</canvas>
-
-
-</div>
-
-
-
-<button id="takeProductBtn"
-style="display:none"
-class="green"
-onclick="takeProductPhoto()">
-
-📸 拍產品圖
-
-</button>
-
-
-
-<button id="saveBtn"
-style="display:none"
-class="green"
-onclick="saveImage()">
-
-💾 存檔
-
-</button>
-
-
-
-<script>
-
-
-const video=document.getElementById("video");
-
-const freezeCanvas=document.getElementById("freezeCanvas");
-
-const freezeCtx=freezeCanvas.getContext("2d");
-
-
-const boxCanvas=document.getElementById("boxCanvas");
-
-const boxCtx=boxCanvas.getContext("2d");
-
-
-const status=document.getElementById("status");
-
-
-const captureBtn=document.getElementById("captureBtn");
-
-
-
-let stream=null;
-
-
-let freezeDone=false;
-
-
-let selectedBox=null;
-
-
-let confirmedCode="";
-
-
-let productBase64="";
-
-
-
-async function startCamera(){
-
-
-try{
-
-
-stream=
-await navigator.mediaDevices.getUserMedia({
-
-video:{
-facingMode:"environment",
-width:{ideal:1920},
-height:{ideal:1080}
-},
-
-audio:false
-
-});
-
-
-video.srcObject=stream;
-
-
-captureBtn.disabled=false;
-
-
-status.innerHTML="請對準品號後按定格";
-
-
-}catch(e){
-
-alert(e.message);
-
-}
-
-
-}
-
-
-
-
-
-function freezeImage(){
-
-
-freezeCtx.drawImage(
-
-video,
-
-0,
-
-0,
-
-1200,
-
-800
-
-);
-
-
-freezeCanvas.style.display="block";
-
-
-freezeDone=true;
-
-
-document.getElementById("ocrBtn").style.display="inline-block";
-
-
-status.innerHTML="圖片已定格，請調整綠框";
-
-
-createDefaultBox();
-
-
-}
-
-
-
-
-
-function createDefaultBox(){
-
-
-boxCtx.clearRect(
-0,
-0,
-1200,
-800
-);
-
-
-
-boxCtx.strokeStyle="lime";
-
-boxCtx.lineWidth=5;
-
-
-boxCtx.strokeRect(
-
-300,
-
-300,
-
-600,
-
-150
-
-);
-
-
-
-selectedBox={
-
-x:300,
-
-y:300,
-
-w:600,
-
-h:150
-
-};
-
-
-
-document.getElementById("clearBoxBtn").style.display="inline-block";
-
-
-}
-
-
-
-function resetBox(){
-
-
-boxCtx.clearRect(
-0,
-0,
-1200,
-800
-);
-
-
-selectedBox=null;
-
-
-}
-
-// ===============================
-// V2 PART 2/4
-// 綠框拖曳 / 調整 / 放大鏡 / 選框
-// ===============================
-
-
-// Canvas 滑鼠 / 觸控座標換算
-function getCanvasPosition(e){
-
-    const rect = boxCanvas.getBoundingClientRect();
-
-    let clientX;
-    let clientY;
-
-
-    if(e.touches){
-
-        clientX=e.touches[0].clientX;
-        clientY=e.touches[0].clientY;
-
-    }else{
-
-        clientX=e.clientX;
-        clientY=e.clientY;
-
-    }
-
-
-    return {
-
-        x:(clientX-rect.left)
-        *(boxCanvas.width/rect.width),
-
-        y:(clientY-rect.top)
-        *(boxCanvas.height/rect.height)
-
-    };
-
-}
-
-
-
-// 判斷是否點到框
-function insideBox(pos){
-
-    if(!selectedBox){
-        return false;
-    }
-
-
-    return (
-
-        pos.x>=selectedBox.x &&
-        pos.x<=selectedBox.x+selectedBox.w &&
-
-        pos.y>=selectedBox.y &&
-        pos.y<=selectedBox.y+selectedBox.h
-
-    );
-
-}
-
-
-
-
-let dragging=false;
-
-let resizing=false;
-
-let dragOffset={x:0,y:0};
-
-
-
-// 是否靠近右下角
-function nearResizePoint(pos){
-
-    if(!selectedBox){
-        return false;
-    }
-
-
-    let rx=
-    selectedBox.x+
-    selectedBox.w;
-
-
-    let ry=
-    selectedBox.y+
-    selectedBox.h;
-
-
-    return Math.abs(pos.x-rx)<40 &&
-           Math.abs(pos.y-ry)<40;
-
-}
-
-
-
-// 重新繪製框
-function redrawBox(){
-
-
-    boxCtx.clearRect(
-        0,
-        0,
-        boxCanvas.width,
-        boxCanvas.height
-    );
-
-
-    if(!selectedBox){
-        return;
-    }
-
-
-
-    boxCtx.strokeStyle="#00ff00";
-
-    boxCtx.lineWidth=6;
-
-
-    boxCtx.strokeRect(
-
-        selectedBox.x,
-
-        selectedBox.y,
-
-        selectedBox.w,
-
-        selectedBox.h
-
-    );
-
-
-
-    // 右下角調整點
-
-    boxCtx.fillStyle="#00ff00";
-
-    boxCtx.fillRect(
-
-        selectedBox.x+
-        selectedBox.w-15,
-
-        selectedBox.y+
-        selectedBox.h-15,
-
-        30,
-
-        30
-
-    );
-
-}
-
-
-
-
-
-// ======================
-// 滑鼠操作
-// ======================
-
-
-boxCanvas.addEventListener(
-"mousedown",
-function(e){
-
-
-    let pos=getCanvasPosition(e);
-
-
-
-    if(nearResizePoint(pos)){
-
-
-        resizing=true;
-
-
-    }
-    else if(insideBox(pos)){
-
-
-        dragging=true;
-
-
-        dragOffset.x=
-        pos.x-selectedBox.x;
-
-
-        dragOffset.y=
-        pos.y-selectedBox.y;
-
-
-    }
-    else{
-
-
-        // 點空白新增框
-
-        selectedBox={
-
-            x:pos.x,
-
-            y:pos.y,
-
-            w:300,
-
-            h:120
-
-        };
-
-
-        redrawBox();
-
-
-    }
-
-
-});
-
-
-
-
-
-boxCanvas.addEventListener(
-"mousemove",
-function(e){
-
-
-    let pos=getCanvasPosition(e);
-
-
-
-    if(dragging){
-
-
-        selectedBox.x=
-        pos.x-dragOffset.x;
-
-
-        selectedBox.y=
-        pos.y-dragOffset.y;
-
-
-        redrawBox();
-
-
-        updateZoom();
-
-
-    }
-
-
-
-
-    if(resizing){
-
-
-        selectedBox.w=
-        pos.x-selectedBox.x;
-
-
-        selectedBox.h=
-        pos.y-selectedBox.y;
-
-
-
-        if(selectedBox.w<80){
-            selectedBox.w=80;
+    <h2>門市品號辨識系統 V2</h2>
+
+    <div id="stepTitle" class="badge">第一階段：品號辨識</div>
+
+    <div id="cameraBox" class="camera-area">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="freezeCanvas" width="1200" height="800"></canvas>
+        <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
+    </div>
+
+    <div id="zoomBox">
+        <canvas id="zoomCanvas"></canvas>
+    </div>
+
+    <div>
+        <button onclick="startCamera()">📷 開啟鏡頭</button>
+        <button id="captureBtn" onclick="freezeImage()" disabled>🔍 定格畫面</button>
+        <button id="ocrBtn" onclick="runOCR()" style="display:none" class="orange">AI 辨識品號 / 掃條碼</button>
+        <button id="clearBoxBtn" onclick="resetBox()" style="display:none" class="gray">清除框</button>
+    </div>
+
+    <div id="status">請點擊「開啟鏡頭」</div>
+
+    <div id="resultPanel">
+        <h3>品號確認</h3>
+        <div id="results"></div>
+        <input id="manualCode" placeholder="人工輸入品號">
+        <br>
+        <button onclick="confirmCode()" class="green" style="width:100%; font-size:18px;">確認品號 ➔ 下一步</button>
+    </div>
+
+    <!-- 第二階段產品拍照 -->
+    <div id="productBox" class="product-area" style="display:none">
+        <video id="productVideo" autoplay playsinline></video>
+        <canvas id="productCanvas" width="284" height="257"></canvas>
+    </div>
+
+    <button id="takeProductBtn" style="display:none" class="green" onclick="takeProductPhoto()">📸 拍產品圖</button>
+    <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
+
+    <script>
+        const video = document.getElementById("video");
+        const freezeCanvas = document.getElementById("freezeCanvas");
+        const freezeCtx = freezeCanvas.getContext("2d");
+
+        const boxCanvas = document.getElementById("boxCanvas");
+        const boxCtx = boxCanvas.getContext("2d");
+
+        const status = document.getElementById("status");
+        const captureBtn = document.getElementById("captureBtn");
+
+        let stream = null;
+        let freezeDone = false;
+        let selectedBox = null;
+        let confirmedCode = "";
+        let barcodeDetector = null;
+
+        // 初始化 Google ML Kit Barcode Detector
+        if ('BarcodeDetector' in window) {
+            try {
+                barcodeDetector = new BarcodeDetector({
+                    formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code', 'data_matrix', 'upc_a', 'upc_e']
+                });
+            } catch (e) {
+                barcodeDetector = new BarcodeDetector();
+            }
         }
 
-
-        if(selectedBox.h<40){
-            selectedBox.h=40;
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+                captureBtn.disabled = false;
+                status.innerHTML = "請將品號對準畫面後，按「定格畫面」";
+            } catch (e) {
+                alert("無法開啟鏡頭：" + e.message);
+            }
         }
 
-
-        redrawBox();
-
-
-        updateZoom();
-
-    }
-
-
-
-});
-
-
-
-
-
-boxCanvas.addEventListener(
-"mouseup",
-function(){
-
-    dragging=false;
-
-    resizing=false;
-
-
-});
-
-
-
-
-
-// ======================
-// 手機觸控
-// ======================
-
-
-boxCanvas.addEventListener(
-"touchstart",
-function(e){
-
-    e.preventDefault();
-
-
-    let pos=getCanvasPosition(e);
-
-
-    if(nearResizePoint(pos)){
-
-
-        resizing=true;
-
-
-    }
-    else if(insideBox(pos)){
-
-
-        dragging=true;
-
-
-        dragOffset.x=
-        pos.x-selectedBox.x;
-
-
-        dragOffset.y=
-        pos.y-selectedBox.y;
-
-
-    }
-    else{
-
-
-        selectedBox={
-
-            x:pos.x,
-
-            y:pos.y,
-
-            w:300,
-
-            h:120
-
-        };
-
-
-        redrawBox();
-
-    }
-
-
-
-},
-{
-passive:false
-});
-
-
-
-
-
-boxCanvas.addEventListener(
-"touchmove",
-function(e){
-
-    e.preventDefault();
-
-
-    let pos=getCanvasPosition(e);
-
-
-
-    if(dragging){
-
-
-        selectedBox.x=
-        pos.x-dragOffset.x;
-
-
-        selectedBox.y=
-        pos.y-dragOffset.y;
-
-
-        redrawBox();
-
-
-        updateZoom();
-
-
-    }
-
-
-
-    if(resizing){
-
-
-        selectedBox.w=
-        pos.x-selectedBox.x;
-
-
-        selectedBox.h=
-        pos.y-selectedBox.y;
-
-
-        redrawBox();
-
-
-        updateZoom();
-
-
-    }
-
-
-},
-{
-passive:false
-});
-
-
-
-
-
-boxCanvas.addEventListener(
-"touchend",
-function(){
-
-
-    dragging=false;
-
-    resizing=false;
-
-
-});
-
-
-
-
-
-// ======================
-// 放大鏡
-// ======================
-
-
-const zoomBox=
-document.getElementById("zoomBox");
-
-
-const zoomCanvas=
-document.getElementById("zoomCanvas");
-
-
-const zoomCtx=
-zoomCanvas.getContext("2d");
-
-
-
-zoomCanvas.width=600;
-
-zoomCanvas.height=240;
-
-
-
-
-function updateZoom(){
-
-
-    if(!selectedBox || !freezeDone){
-
-        zoomBox.style.display="none";
-
-        return;
-
-    }
-
-
-
-    zoomBox.style.display="block";
-
-
-
-    zoomCtx.clearRect(
-
-        0,
-
-        0,
-
-        zoomCanvas.width,
-
-        zoomCanvas.height
-
-    );
-
-
-
-    zoomCtx.drawImage(
-
-        freezeCanvas,
-
-        selectedBox.x,
-
-        selectedBox.y,
-
-        selectedBox.w,
-
-        selectedBox.h,
-
-        0,
-
-        0,
-
-        zoomCanvas.width,
-
-        zoomCanvas.height
-
-    );
-
-}
-
-
-
-
-// ======================
-// 框選確認
-// ======================
-
-
-function getCropCanvas(){
-
-
-    if(!selectedBox){
-
-        alert("請先選擇品號區域");
-
-        return null;
-
-    }
-
-
-
-    let crop=document.createElement("canvas");
-
-
-    crop.width=
-    selectedBox.w;
-
-
-    crop.height=
-    selectedBox.h;
-
-
-
-    let ctx=crop.getContext("2d");
-
-
-
-    ctx.drawImage(
-
-        freezeCanvas,
-
-        selectedBox.x,
-
-        selectedBox.y,
-
-        selectedBox.w,
-
-        selectedBox.h,
-
-        0,
-
-        0,
-
-        crop.width,
-
-        crop.height
-
-    );
-
-
-
-    return crop;
-
-}
-
-// ===============================
-// V2 PART 3/4
-// OCR / 候選 / 信心值 / ERP模式
-// ===============================
-
-
-
-let ocrCandidates=[];
-
-
-
-// OCR按鈕
-
-async function runOCR(){
-
-
-    let crop=getCropCanvas();
-
-
-    if(!crop){
-
-        return;
-
-    }
-
-
-
-    status.innerHTML="正在辨識品號...";
-
-
-
-    try{
-
-
-        const worker =
-        await Tesseract.createWorker('eng');
-
-
-
-        await worker.setParameters({
-
-            tessedit_char_whitelist:
-            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-*/',
-
-            tessedit_pageseg_mode:
-            '7',
-
-            preserve_interword_spaces:
-            '1',
-
-            load_system_dawg:
-            '0',
-
-            load_freq_dawg:
-            '0'
-
-        });
-
-
-
-        const result =
-        await worker.recognize(crop);
-
-
-
-        await worker.terminate();
-
-
-
-        let text=
-        result.data.text
-        .trim();
-
-
-
-        let confidence=
-        result.data.confidence;
-
-
-
-        processOCRResult(
-            text,
-            confidence
-        );
-
-
-
-    }
-    catch(e){
-
-        status.innerHTML=
-        "OCR錯誤："+e.message;
-
-    }
-
-
-}
-
-
-
-
-
-// ======================
-// OCR結果整理
-// ======================
-
-
-function processOCRResult(
-text,
-confidence
-){
-
-
-
-    let clean=
-    text
-
-    // 保留指定符號
-    .replace(
-    /[^A-Za-z0-9\-*/]/g,
-    ''
-    )
-
-    .toUpperCase();
-
-
-
-    if(!clean){
-
-
-        showManualOnly();
-
-
-        return;
-
-    }
-
-
-
-    ocrCandidates=[];
-
-
-
-    // 第一順位
-    ocrCandidates.push({
-
-        code:clean,
-
-        score:
-        Math.round(confidence)
-
-    });
-
-
-
-    // 模擬可能錯誤字元修正候選
-
-    generateSimilarCandidates(clean);
-
-
-
-    showOCRResults();
-
-
-
-}
-
-
-
-
-
-
-// ======================
-// 產生相似候選
-// ======================
-
-
-function generateSimilarCandidates(code){
-
-
-
-    let list=[];
-
-
-
-    if(code.includes("0")){
-
-        list.push(
-            code.replace(
-            /0/g,
-            "O"
-            )
-        );
-
-    }
-
-
-
-    if(code.includes("O")){
-
-        list.push(
-            code.replace(
-            /O/g,
-            "0"
-            )
-        );
-
-    }
-
-
-
-    if(code.includes("1")){
-
-        list.push(
-            code.replace(
-            /1/g,
-            "I"
-            )
-        );
-
-    }
-
-
-
-    if(code.includes("I")){
-
-        list.push(
-            code.replace(
-            /I/g,
-            "1"
-            )
-        );
-
-    }
-
-
-
-
-    list.forEach(x=>{
-
-
-        if(
-        !ocrCandidates.find(
-        y=>y.code===x
-        )){
-
-
-            ocrCandidates.push({
-
-                code:x,
-
-                score:70
-
+        function freezeImage() {
+            freezeCtx.drawImage(video, 0, 0, 1200, 800);
+            freezeCanvas.style.display = "block";
+            freezeDone = true;
+            document.getElementById("ocrBtn").style.display = "inline-block";
+            status.innerHTML = "圖片已定格！可拖曳調整綠框範圍，然後點擊「AI 辨識品號」";
+            createDefaultBox();
+            updateZoom();
+        }
+
+        function createDefaultBox() {
+            selectedBox = { x: 300, y: 300, w: 600, h: 150 };
+            redrawBox();
+            document.getElementById("clearBoxBtn").style.display = "inline-block";
+        }
+
+        function resetBox() {
+            boxCtx.clearRect(0, 0, 1200, 800);
+            selectedBox = null;
+            updateZoom();
+        }
+
+        // ===============================
+        // 綠框拖曳 / 調整 / 放大鏡
+        // ===============================
+        function getCanvasPosition(e) {
+            const rect = boxCanvas.getBoundingClientRect();
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            return {
+                x: (clientX - rect.left) * (boxCanvas.width / rect.width),
+                y: (clientY - rect.top) * (boxCanvas.height / rect.height)
+            };
+        }
+
+        function insideBox(pos) {
+            if (!selectedBox) return false;
+            return (pos.x >= selectedBox.x && pos.x <= selectedBox.x + selectedBox.w &&
+                    pos.y >= selectedBox.y && pos.y <= selectedBox.y + selectedBox.h);
+        }
+
+        let dragging = false;
+        let resizing = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        function nearResizePoint(pos) {
+            if (!selectedBox) return false;
+            let rx = selectedBox.x + selectedBox.w;
+            let ry = selectedBox.y + selectedBox.h;
+            return Math.abs(pos.x - rx) < 40 && Math.abs(pos.y - ry) < 40;
+        }
+
+        function redrawBox() {
+            boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+            if (!selectedBox) return;
+
+            boxCtx.strokeStyle = "#00ff00";
+            boxCtx.lineWidth = 6;
+            boxCtx.strokeRect(selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h);
+
+            // 右下角控制點
+            boxCtx.fillStyle = "#00ff00";
+            boxCtx.fillRect(selectedBox.x + selectedBox.w - 15, selectedBox.y + selectedBox.h - 15, 30, 30);
+        }
+
+        // 滑鼠與觸控事件綁定
+        function handleStart(e) {
+            let pos = getCanvasPosition(e);
+            if (nearResizePoint(pos)) {
+                resizing = true;
+            } else if (insideBox(pos)) {
+                dragging = true;
+                dragOffset.x = pos.x - selectedBox.x;
+                dragOffset.y = pos.y - selectedBox.y;
+            } else {
+                selectedBox = { x: pos.x, y: pos.y, w: 300, h: 120 };
+                redrawBox();
+                updateZoom();
+            }
+        }
+
+        function handleMove(e) {
+            if (!selectedBox) return;
+            let pos = getCanvasPosition(e);
+            if (dragging) {
+                selectedBox.x = pos.x - dragOffset.x;
+                selectedBox.y = pos.y - dragOffset.y;
+                redrawBox();
+                updateZoom();
+            } else if (resizing) {
+                selectedBox.w = Math.max(80, pos.x - selectedBox.x);
+                selectedBox.h = Math.max(40, pos.y - selectedBox.y);
+                redrawBox();
+                updateZoom();
+            }
+        }
+
+        function handleEnd() {
+            dragging = false;
+            resizing = false;
+        }
+
+        boxCanvas.addEventListener("mousedown", handleStart);
+        boxCanvas.addEventListener("mousemove", handleMove);
+        boxCanvas.addEventListener("mouseup", handleEnd);
+
+        boxCanvas.addEventListener("touchstart", (e) => { e.preventDefault(); handleStart(e); }, { passive: false });
+        boxCanvas.addEventListener("touchmove", (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
+        boxCanvas.addEventListener("touchend", handleEnd);
+
+        // 放大鏡功能
+        const zoomBox = document.getElementById("zoomBox");
+        const zoomCanvas = document.getElementById("zoomCanvas");
+        const zoomCtx = zoomCanvas.getContext("2d");
+        zoomCanvas.width = 600;
+        zoomCanvas.height = 240;
+
+        function updateZoom() {
+            if (!selectedBox || !freezeDone) {
+                zoomBox.style.display = "none";
+                return;
+            }
+            zoomBox.style.display = "block";
+            zoomCtx.clearRect(0, 0, zoomCanvas.width, zoomCanvas.height);
+            zoomCtx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, zoomCanvas.width, zoomCanvas.height);
+        }
+
+        function getCropCanvas() {
+            if (!selectedBox) {
+                alert("請先劃定品號區域！");
+                return null;
+            }
+            let crop = document.createElement("canvas");
+            crop.width = selectedBox.w;
+            crop.height = selectedBox.h;
+            let ctx = crop.getContext("2d");
+            ctx.drawImage(freezeCanvas, selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h, 0, 0, selectedBox.w, selectedBox.h);
+            return crop;
+        }
+
+        // ===============================
+        // ML Kit 條碼 + Tesseract OCR
+        // ===============================
+        let ocrCandidates = [];
+
+        async function runOCR() {
+            let crop = getCropCanvas();
+            if (!crop) return;
+
+            status.innerHTML = "正在辨識條碼與文字...";
+            ocrCandidates = [];
+
+            // A. Google ML Kit 條碼掃描
+            if (barcodeDetector) {
+                try {
+                    const barcodes = await barcodeDetector.detect(crop);
+                    barcodes.forEach(b => {
+                        let val = b.rawValue ? b.rawValue.trim().toUpperCase() : "";
+                        if (val && !ocrCandidates.find(c => c.code === val)) {
+                            ocrCandidates.push({ code: val, score: 100, isBarcode: true });
+                        }
+                    });
+                } catch (e) {
+                    console.log("Barcode pass error:", e);
+                }
+            }
+
+            // B. 預處理二值化影像（黑白反相處理，支援黑底白字與螢幕拍照）
+            preprocessCropImage(crop);
+
+            // C. OCR 辨識
+            try {
+                const worker = await Tesseract.createWorker('eng');
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-*/',
+                    tessedit_pageseg_mode: '6',
+                    load_system_dawg: '0',
+                    load_freq_dawg: '0'
+                });
+
+                const result = await worker.recognize(crop);
+                await worker.terminate();
+
+                let text = result.data.text.trim();
+                let confidence = result.data.confidence;
+
+                processOCRResult(text, confidence);
+            } catch (e) {
+                status.innerHTML = "OCR 錯誤：" + e.message;
+            }
+        }
+
+        function preprocessCropImage(canvas) {
+            const ctx = canvas.getContext("2d");
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+
+            let totalBrightness = 0;
+            const pixelCount = data.length / 4;
+
+            for (let i = 0; i < data.length; i += 4) {
+                totalBrightness += (data[i] + data[i + 1] + data[i + 2]) / 3;
+            }
+
+            const avgBrightness = totalBrightness / pixelCount;
+            const isDarkBackground = avgBrightness < 120;
+
+            for (let i = 0; i < data.length; i += 4) {
+                let brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                let value;
+                if (isDarkBackground) {
+                    value = brightness > 110 ? 0 : 255;
+                } else {
+                    value = brightness < 130 ? 0 : 255;
+                }
+                data[i] = data[i + 1] = data[i + 2] = value;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        function processOCRResult(text, confidence) {
+            let clean = text.replace(/[^A-Za-z0-9\-*/]/g, '').toUpperCase();
+
+            if (clean && !ocrCandidates.find(c => c.code === clean)) {
+                ocrCandidates.push({ code: clean, score: Math.round(confidence), isBarcode: false });
+                generateSimilarCandidates(clean);
+            }
+
+            if (ocrCandidates.length === 0) {
+                showManualOnly();
+            } else {
+                showOCRResults();
+            }
+        }
+
+        function generateSimilarCandidates(code) {
+            let list = [];
+            if (code.includes("0")) list.push(code.replace(/0/g, "O"));
+            if (code.includes("O")) list.push(code.replace(/O/g, "0"));
+            if (code.includes("1")) list.push(code.replace(/1/g, "I"));
+            if (code.includes("I")) list.push(code.replace(/I/g, "1"));
+
+            list.forEach(x => {
+                if (!ocrCandidates.find(y => y.code === x)) {
+                    ocrCandidates.push({ code: x, score: 70, isBarcode: false });
+                }
+            });
+        }
+
+        function showOCRResults() {
+            let panel = document.getElementById("resultPanel");
+            let results = document.getElementById("results");
+            results.innerHTML = "";
+
+            ocrCandidates.forEach(item => {
+                let div = document.createElement("div");
+                div.className = "result-item";
+                let tag = item.isBarcode ? " <span style='color:red;'>[條碼]</span>" : "";
+                div.innerHTML = `${item.code}${tag} <br><small style='color:#666;'>信心值：${item.score}%</small>`;
+
+                div.onclick = function () {
+                    document.getElementById("manualCode").value = formatDisplayCode(item.code);
+                };
+                results.appendChild(div);
             });
 
+            if (ocrCandidates.length > 0) {
+                document.getElementById("manualCode").value = formatDisplayCode(ocrCandidates[0].code);
+            }
+
+            panel.style.display = "block";
+            status.innerHTML = "請人工確認正確品號：";
         }
 
-
-    });
-
-
-
-}
-
-
-
-
-
-
-// ======================
-// 顯示候選
-// ======================
-
-
-function showOCRResults(){
-
-
-    let panel=
-    document.getElementById("resultPanel");
-
-
-    let results=
-    document.getElementById("results");
-
-
-
-    results.innerHTML="";
-
-
-
-    ocrCandidates.forEach(item=>{
-
-
-        let div=
-        document.createElement("div");
-
-
-
-        div.className=
-        "result-item";
-
-
-
-        div.innerHTML=
-
-        `
-        ${item.code}
-        <br>
-        信心值：
-        ${item.score}%
-        `;
-
-
-
-        div.onclick=function(){
-
-
-            document.getElementById(
-            "manualCode"
-            ).value=item.code;
-
-
-        };
-
-
-
-        results.appendChild(div);
-
-
-
-    });
-
-
-
-    panel.style.display="block";
-
-
-
-    status.innerHTML=
-    "請人工確認正確品號";
-
-
-
-}
-
-
-
-
-
-
-function showManualOnly(){
-
-
-    document.getElementById(
-    "resultPanel"
-    ).style.display="block";
-
-
-    status.innerHTML=
-    "未辨識成功，請手動輸入品號";
-
-
-}
-
-
-
-
-
-// ======================
-// 品號搜尋模式
-// ======================
-
-
-
-function searchERPCode(keyword){
-
-
-    /*
-    
-    這裡之後接鼎新ERP資料
-    
-    範例：
-
-    API回傳：
-
-    [
-      "ABC-123",
-      "ABC-456"
-    ]
-
-    */
-
-
-    let mock=[
-
-        "ABC-12345",
-
-        "ABC-12346",
-
-        "ABC-98765"
-
-    ];
-
-
-
-    return mock.filter(
-
-        x=>
-
-        x.includes(keyword)
-
-    );
-
-
-}
-
-
-
-
-// ======================
-// ERP格式檢查
-// ======================
-
-
-function checkERPFormat(code){
-
-
-
-    let result={
-
-        ok:true,
-
-        message:"格式正常"
-
-    };
-
-
-
-    // 範例：
-    // 最少3碼
-
-    if(code.length<3){
-
-
-        result.ok=false;
-
-
-        result.message=
-        "品號長度不足";
-
-
-    }
-
-
-
-    return result;
-
-
-
-}
-
-
-
-
-
-
-// ======================
-// 人工確認品號
-// ======================
-
-
-function confirmCode(){
-
-
-
-    let code=
-    document.getElementById(
-    "manualCode"
-    ).value.trim();
-
-
-
-    if(!code){
-
-        alert("請輸入品號");
-
-        return;
-
-    }
-
-
-
-
-    let check=
-    checkERPFormat(code);
-
-
-
-    if(!check.ok){
-
-
-        if(
-        !confirm(
-        check.message+
-        "\n仍要使用嗎?"
-        )
-        ){
-
-            return;
-
+        function showManualOnly() {
+            document.getElementById("resultPanel").style.display = "block";
+            status.innerHTML = "未辨識成功，請手動輸入品號：";
         }
 
+        // 全半形轉換 ( * / 轉全形，其餘半形)
+        function formatDisplayCode(str) {
+            return str.replace(/\*/g, "＊").replace(/\//g, "／");
+        }
 
-    }
+        function checkERPFormat(code) {
+            if (code.length < 3) {
+                return { ok: false, message: "品號長度不足 3 碼" };
+            }
+            return { ok: true, message: "格式正常" };
+        }
 
+        function confirmCode() {
+            let code = document.getElementById("manualCode").value.trim();
+            if (!code) {
+                alert("請輸入品號！");
+                return;
+            }
 
+            let check = checkERPFormat(code);
+            if (!check.ok) {
+                if (!confirm(check.message + "\n仍要繼續嗎？")) return;
+            }
 
-    confirmedCode=code;
+            confirmedCode = code;
 
+            document.getElementById("resultPanel").style.display = "none";
+            document.getElementById("cameraBox").style.display = "none";
+            document.getElementById("zoomBox").style.display = "none";
+            document.getElementById("productBox").style.display = "block";
+            document.getElementById("takeProductBtn").style.display = "inline-block";
 
+            document.getElementById("stepTitle").innerHTML = "第二階段：拍攝產品圖 (品號：" + confirmedCode + ")";
+            status.innerHTML = "請對準產品拍攝";
 
-    document.getElementById(
-    "resultPanel"
-    ).style.display="none";
+            openProductCamera();
+        }
 
+        // ===============================
+        // 第二階段：產品拍照 / 存檔
+        // ===============================
+        const productVideo = document.getElementById("productVideo");
+        const productCanvas = document.getElementById("productCanvas");
+        const productCtx = productCanvas.getContext("2d");
+        let productStream = null;
 
+        async function openProductCamera() {
+            try {
+                productStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+                    audio: false
+                });
+                productVideo.srcObject = productStream;
+            } catch (e) {
+                alert("產品鏡頭錯誤：" + e.message);
+            }
+        }
 
-    document.getElementById(
-    "cameraBox"
-    ).style.display="none";
+        function takeProductPhoto() {
+            const targetW = 284;
+            const targetH = 257;
+            const vw = productVideo.videoWidth || 1920;
+            const vh = productVideo.videoHeight || 1080;
 
+            const targetRatio = targetW / targetH;
+            const videoRatio = vw / vh;
+            let sx, sy, sw, sh;
 
+            if (videoRatio > targetRatio) {
+                sh = vh;
+                sw = vh * targetRatio;
+                sx = (vw - sw) / 2;
+                sy = 0;
+            } else {
+                sw = vw;
+                sh = vw / targetRatio;
+                sx = 0;
+                sy = (vh - sh) / 2;
+            }
 
-    document.getElementById(
-    "productBox"
-    ).style.display="block";
+            productCanvas.width = targetW;
+            productCanvas.height = targetH;
+            productCtx.clearRect(0, 0, targetW, targetH);
+            productCtx.drawImage(productVideo, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
+            status.innerHTML = "產品照片完成！請確認無誤後點擊存檔";
+            document.getElementById("saveBtn").style.display = "inline-block";
+        }
 
+        // JPEG 72 DPI Header 寫入 (修正 Return 換行修復 Bug)
+        function setJpegDpi(base64, dpi) {
+            let binary = atob(base64.split(",")[1]);
+            let bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
 
-    document.getElementById(
-    "takeProductBtn"
-    ).style.display="inline-block";
-
-
-
-    document.getElementById(
-    "stepTitle"
-    ).innerHTML=
-
-    "第二階段：拍攝產品圖 品號："+confirmedCode;
-
-
-
-    status.innerHTML=
-    "請拍攝產品圖";
-
-
-}
-
-// ===============================
-// V2 PART 4/4
-// 產品拍照 / 284x257 / 72dpi / 存檔
-// ===============================
-
-
-
-const productVideo=
-document.getElementById("productVideo");
-
-
-const productCanvas=
-document.getElementById("productCanvas");
-
-
-const productCtx=
-productCanvas.getContext("2d");
-
-
-
-let productStream=null;
-
-
-
-
-// ===============================
-// 開啟產品拍照鏡頭
-// ===============================
-
-
-async function openProductCamera(){
-
-
-    try{
-
-
-        productStream=
-        await navigator.mediaDevices.getUserMedia({
-
-            video:{
-
-                facingMode:"environment",
-
-                width:{
-                    ideal:1920
-                },
-
-                height:{
-                    ideal:1080
+            for (let i = 0; i < bytes.length - 9; i++) {
+                if (bytes[i] === 0xFF && bytes[i + 1] === 0xE0) {
+                    bytes[i + 11] = 1;
+                    bytes[i + 12] = (dpi >> 8) & 255;
+                    bytes[i + 13] = dpi & 255;
+                    bytes[i + 14] = (dpi >> 8) & 255;
+                    bytes[i + 15] = dpi & 255;
+                    break;
                 }
-
-            },
-
-            audio:false
-
-        });
-
-
-
-        productVideo.srcObject=
-        productStream;
-
-
-
-    }
-    catch(e){
-
-        alert(
-        "產品鏡頭錯誤："+e.message
-        );
-
-    }
-
-
-}
-
-
-
-
-
-// ===============================
-// 拍攝產品圖
-// ===============================
-
-
-function takeProductPhoto(){
-
-
-
-    const targetW=284;
-
-    const targetH=257;
-
-
-
-    const vw=
-    productVideo.videoWidth || 1920;
-
-
-    const vh=
-    productVideo.videoHeight || 1080;
-
-
-
-    const targetRatio=
-    targetW/targetH;
-
-
-    const videoRatio=
-    vw/vh;
-
-
-
-    let sx,sy,sw,sh;
-
-
-
-    /*
-    
-    中央裁切
-
-    不拉伸
-
-    */
-
-
-    if(videoRatio>targetRatio){
-
-
-        sh=vh;
-
-        sw=
-        vh*targetRatio;
-
-
-        sx=
-        (vw-sw)/2;
-
-
-        sy=0;
-
-
-
-    }
-    else{
-
-
-        sw=vw;
-
-
-        sh=
-        vw/targetRatio;
-
-
-        sx=0;
-
-
-        sy=
-        (vh-sh)/2;
-
-
-
-    }
-
-
-
-
-    productCanvas.width=
-    targetW;
-
-
-    productCanvas.height=
-    targetH;
-
-
-
-    productCtx.clearRect(
-
-        0,
-
-        0,
-
-        targetW,
-
-        targetH
-
-    );
-
-
-
-    productCtx.drawImage(
-
-        productVideo,
-
-        sx,
-
-        sy,
-
-        sw,
-
-        sh,
-
-        0,
-
-        0,
-
-        targetW,
-
-        targetH
-
-    );
-
-
-
-    status.innerHTML=
-    "產品圖片完成，確認後存檔";
-
-
-
-    document.getElementById(
-    "saveBtn"
-    ).style.display="inline-block";
-
-
-
-}
-
-
-
-
-
-
-// ===============================
-// JPEG 72 DPI
-// ===============================
-
-
-function setJpegDpi(
-base64,
-dpi
-){
-
-
-    let binary=
-    atob(
-    base64.split(",")[1]
-    );
-
-
-
-    let bytes=
-    new Uint8Array(
-    binary.length
-    );
-
-
-
-    for(
-    let i=0;
-    i<binary.length;
-    i++
-    ){
-
-        bytes[i]=
-        binary.charCodeAt(i);
-
-    }
-
-
-
-    /*
-    
-    插入JFIF DPI
-
-    */
-
-
-    for(
-    let i=0;
-    i<bytes.length-9;
-    i++
-    ){
-
-
-        if(
-        bytes[i]===0xFF &&
-        bytes[i+1]===0xE0
-        ){
-
-
-            bytes[i+11]=1;
-
-
-            bytes[i+12]=
-            (dpi>>8)&255;
-
-
-            bytes[i+13]=
-            dpi&255;
-
-
-            bytes[i+14]=
-            (dpi>>8)&255;
-
-
-            bytes[i+15]=
-            dpi&255;
-
-
-            break;
-
-
+            }
+
+            let result = "";
+            bytes.forEach(b => { result += String.fromCharCode(b); });
+            return "data:image/jpeg;base64," + btoa(result);
         }
 
-
-    }
-
-
-
-
-    let result="";
-
-
-    bytes.forEach(
-    b=>{
-
-        result+=
-        String.fromCharCode(b);
-
-    });
-
-
-
-    return
-    "data:image/jpeg;base64,"+
-    btoa(result);
-
-
-}
-
-
-
-
-
-
-
-// ===============================
-// 檔名處理
-// * / 轉全形
-// ===============================
-
-
-function formatFileName(code){
-
-
-
-    return code
-
-    .replace(
-    /\*/g,
-    "＊"
-    )
-
-    .replace(
-    /\//g,
-    "／"
-    )
-
-    +
-
-    ".jpg";
-
-
-}
-
-
-
-
-
-
-
-// ===============================
-// 存檔
-// ===============================
-
-
-function saveImage(){
-
-
-
-    let raw=
-    productCanvas.toDataURL(
-
-        "image/jpeg",
-
-        0.95
-
-    );
-
-
-
-    let finalImage=
-    setJpegDpi(
-    raw,
-    72
-    );
-
-
-
-    let filename=
-    formatFileName(
-    confirmedCode
-    );
-
-
-
-    let link=
-    document.createElement("a");
-
-
-
-    link.href=
-    finalImage;
-
-
-    link.download=
-    filename;
-
-
-
-    document.body.appendChild(link);
-
-
-    link.click();
-
-
-    document.body.removeChild(link);
-
-
-
-
-    alert(
-    "已存檔："+filename
-    );
-
-
-
-    resetSystem();
-
-
-
-}
-
-
-
-
-
-
-
-
-// ===============================
-// 完成後回第一階段
-// ===============================
-
-
-function resetSystem(){
-
-
-
-    confirmedCode="";
-
-
-
-    freezeDone=false;
-
-
-
-    selectedBox=null;
-
-
-
-    boxCtx.clearRect(
-
-        0,
-
-        0,
-
-        boxCanvas.width,
-
-        boxCanvas.height
-
-    );
-
-
-
-    freezeCtx.clearRect(
-
-        0,
-
-        0,
-
-        freezeCanvas.width,
-
-        freezeCanvas.height
-
-    );
-
-
-
-    document.getElementById(
-    "productBox"
-    ).style.display="none";
-
-
-
-    document.getElementById(
-    "takeProductBtn"
-    ).style.display="none";
-
-
-
-    document.getElementById(
-    "saveBtn"
-    ).style.display="none";
-
-
-
-    document.getElementById(
-    "cameraBox"
-    ).style.display="block";
-
-
-
-    document.getElementById(
-    "stepTitle"
-    ).innerHTML=
-    "第一階段：品號辨識";
-
-
-
-    status.innerHTML=
-    "請開始下一筆";
-
-
-
-}
-
-
-
-
-
-
-
-// ===============================
-// 頁面載入
-// ===============================
-
-
-window.onload=function(){
-
-
-    /*
-    
-    產品拍照流程需要時才開啟
-
-    */
-
-
-};
+        function saveImage() {
+            let raw = productCanvas.toDataURL("image/jpeg", 0.95);
+            let finalImage = setJpegDpi(raw, 72);
+            let filename = confirmedCode + ".jpg";
+
+            let link = document.createElement("a");
+            link.href = finalImage;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            alert("已存檔：" + filename);
+            resetSystem();
+        }
+
+        function resetSystem() {
+            confirmedCode = "";
+            freezeDone = false;
+            selectedBox = null;
+
+            boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+            freezeCtx.clearRect(0, 0, freezeCanvas.width, freezeCanvas.height);
+            freezeCanvas.style.display = "none";
+
+            document.getElementById("productBox").style.display = "none";
+            document.getElementById("takeProductBtn").style.display = "none";
+            document.getElementById("saveBtn").style.display = "none";
+            document.getElementById("resultPanel").style.display = "none";
+            document.getElementById("ocrBtn").style.display = "none";
+
+            document.getElementById("cameraBox").style.display = "block";
+            document.getElementById("stepTitle").innerHTML = "第一階段：品號辨識";
+            status.innerHTML = "請開始下一筆品號辨識";
+        }
+    </script>
+</body>
+</html>
