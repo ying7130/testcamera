@@ -225,7 +225,7 @@
             }
         }
 
-        // 2. 第一階段：精確橘框裁切 + 二值化預處理 AI 辨識
+        // 2. 第一階段：精確橘框裁切 + 智慧黑白反相處理 AI 辨識
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
@@ -235,7 +235,6 @@
             const vWidth = video.videoWidth || 1920;
             const vHeight = video.videoHeight || 1080;
 
-            // 計算 3.5:1.5 (350/150) 橘框在影像中的精確裁切範圍
             const boxAspect = 350 / 150;
             const videoAspect = vWidth / vHeight;
 
@@ -252,12 +251,11 @@
                 cropY = (vHeight - cropH) / 2;
             }
 
-            // 只將橘框內的影像繪製至 ocrCanvas
             ocrCanvas.width = cropW;
             ocrCanvas.height = cropH;
             ocrCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-            // 二值化預處理：消除螢幕水波紋、雜訊與背景底色
+            // 智慧預處理（支援黑底白字與白底黑字，統一轉為純白底黑字）
             preprocessImageForOCR(ocrCtx, cropW, cropH);
 
             try {
@@ -273,7 +271,6 @@
                 let candidates = [];
                 lines.forEach(line => {
                     let clean = line.text.replace(/[^A-Za-z0-9\/*-]/g, '').toUpperCase();
-                    // 放寬條件，長度 >= 3 且包含英數字即可
                     if (clean.length >= 3 && /[A-Z0-9]/.test(clean) && !candidates.includes(clean)) {
                         candidates.push(clean);
                     }
@@ -293,17 +290,39 @@
             }
         }
 
-        // 影像二值化處理：強化黑字，將底色與水波紋濾為純白
+        // 智慧二值化預處理（自動判斷黑白底並修正為白底黑字）
         function preprocessImageForOCR(ctx, width, height) {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
+            
+            let totalBrightness = 0;
+            const pixelCount = data.length / 4;
+            
             for (let i = 0; i < data.length; i += 4) {
-                let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                let value = avg < 120 ? 0 : 255;
+                let brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                totalBrightness += brightness;
+            }
+            
+            const avgBrightness = totalBrightness / pixelCount;
+            const isDarkBackground = avgBrightness < 128; // 低於 128 判定為黑底
+
+            for (let i = 0; i < data.length; i += 4) {
+                let brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                
+                let value;
+                if (isDarkBackground) {
+                    // 黑底白字：亮部分(文字)轉黑(0)，暗部分(背景)轉白(255)
+                    value = brightness > 100 ? 0 : 255;
+                } else {
+                    // 白底黑字：暗部分(文字)轉黑(0)，亮部分(背景)轉白(255)
+                    value = brightness < 140 ? 0 : 255;
+                }
+
                 data[i] = value;
                 data[i + 1] = value;
                 data[i + 2] = value;
             }
+            
             ctx.putImageData(imgData, 0, 0);
         }
 
@@ -360,7 +379,7 @@
             statusDiv.innerText = `請對準綠框，按下「📸 2. 拍產品圖」`;
         }
 
-        // 5. 第二階段：拍產品圖（畫面定格 + 284x257 不變形處理）
+        // 5. 第二階段：拍產品圖（畫面定格 + 284x257 不變形中心裁切）
         function shootProductImage() {
             const targetWidth = 284;
             const targetHeight = 257;
@@ -387,7 +406,7 @@
             productCtx.clearRect(0, 0, targetWidth, targetHeight);
             productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            // 設定定格預覽
+            // 鎖定畫面預覽
             freezePreview.style.display = "block";
             freezeCtx.clearRect(0, 0, targetWidth, targetHeight);
             freezeCtx.drawImage(productCanvas, 0, 0);
