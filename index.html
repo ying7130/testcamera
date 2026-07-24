@@ -136,7 +136,7 @@
     <!-- 視訊取景容器 -->
     <div id="cameraBox" class="camera-container-step1">
         <video id="webcam" class="webcam-video" autoplay playsinline></video>
-        <!-- 拍攝定格用的 Canvas (蓋在 Video 上) -->
+        <!-- 拍攝定格用的 Canvas -->
         <canvas id="freezePreview" width="284" height="257"></canvas>
     </div>
     
@@ -145,7 +145,7 @@
         <!-- 階段 1 按鈕 -->
         <button id="captureOCRBtn" onclick="captureAndRecognize()" disabled>🔍 1. 擷取品號</button>
         
-        <!-- 階段 2 按鈕群 (動態切換顯示) -->
+        <!-- 階段 2 按鈕群 -->
         <button id="captureProductBtn" class="btn-green" onclick="shootProductImage()" style="display:none;">📸 2. 拍產品圖</button>
         <button id="retakeBtn" class="btn-orange" onclick="resetToStep2Camera()" style="display:none;">🔄 重拍</button>
         <button id="saveBtn" class="btn-green" onclick="confirmSaveAndReset()" style="display:none;">💾 確認存檔</button>
@@ -192,7 +192,7 @@
         const productCtx = productCanvas.getContext('2d');
 
         let confirmedFileName = "";
-        let capturedBase64Data = ""; // 暫存定格時處理好的 72 DPI Base64 圖片
+        let capturedBase64Data = "";
 
         // 1. 初始化鏡頭
         async function initCamera() {
@@ -225,19 +225,40 @@
             }
         }
 
-        // 2. 第一階段：原始解析度全像素 AI 辨識
+        // 2. 第一階段：精確橘框裁切 + 二值化預處理 AI 辨識
         async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
             manualInput.value = "";
-            statusDiv.innerText = "正在讀取高解析度畫面並進行 AI 辨識...";
+            statusDiv.innerText = "正在讀取橘框影像並優化黑白對比...";
 
             const vWidth = video.videoWidth || 1920;
             const vHeight = video.videoHeight || 1080;
 
-            ocrCanvas.width = vWidth;
-            ocrCanvas.height = vHeight;
-            ocrCtx.drawImage(video, 0, 0, vWidth, vHeight);
+            // 計算 3.5:1.5 (350/150) 橘框在影像中的精確裁切範圍
+            const boxAspect = 350 / 150;
+            const videoAspect = vWidth / vHeight;
+
+            let cropW, cropH, cropX, cropY;
+            if (videoAspect > boxAspect) {
+                cropH = vHeight;
+                cropW = vHeight * boxAspect;
+                cropX = (vWidth - cropW) / 2;
+                cropY = 0;
+            } else {
+                cropW = vWidth;
+                cropH = vWidth / boxAspect;
+                cropX = 0;
+                cropY = (vHeight - cropH) / 2;
+            }
+
+            // 只將橘框內的影像繪製至 ocrCanvas
+            ocrCanvas.width = cropW;
+            ocrCanvas.height = cropH;
+            ocrCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+            // 二值化預處理：消除螢幕水波紋、雜訊與背景底色
+            preprocessImageForOCR(ocrCtx, cropW, cropH);
 
             try {
                 const worker = await Tesseract.createWorker('eng');
@@ -252,10 +273,8 @@
                 let candidates = [];
                 lines.forEach(line => {
                     let clean = line.text.replace(/[^A-Za-z0-9\/*-]/g, '').toUpperCase();
-                    const hasLetter = /[A-Z]/.test(clean);
-                    const hasNumber = /[0-9]/.test(clean);
-
-                    if (clean.length >= 4 && hasLetter && hasNumber && !candidates.includes(clean)) {
+                    // 放寬條件，長度 >= 3 且包含英數字即可
+                    if (clean.length >= 3 && /[A-Z0-9]/.test(clean) && !candidates.includes(clean)) {
                         candidates.push(clean);
                     }
                 });
@@ -272,6 +291,20 @@
             } catch (err) {
                 statusDiv.innerText = "辨識發生錯誤：" + err.message;
             }
+        }
+
+        // 影像二值化處理：強化黑字，將底色與水波紋濾為純白
+        function preprocessImageForOCR(ctx, width, height) {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                let value = avg < 120 ? 0 : 255;
+                data[i] = value;
+                data[i + 1] = value;
+                data[i + 2] = value;
+            }
+            ctx.putImageData(imgData, 0, 0);
         }
 
         // 3. 顯示選項面板
@@ -310,25 +343,24 @@
             selectionPanel.style.display = "none";
             captureOCRBtn.style.display = "none";
             
-            // 切換至第二階段取景框 (284x257)
             cameraBox.className = "camera-container-step2";
             stepBadge.innerText = `第二階段：拍攝產品圖 (品號：${confirmedFileName})`;
             stepBadge.style.backgroundColor = "#28a745";
             
-            resetToStep2Camera(); // 初始化第二階段拍照按鈕狀態
+            resetToStep2Camera();
             statusDiv.innerText = `品號定案：[ ${confirmedFileName} ]！請對準綠框，點擊「拍產品圖」`;
         }
 
-        // 重置為第二階段即時畫面狀態 (重拍時也會呼叫這個)
+        // 重置為第二階段即時畫面狀態
         function resetToStep2Camera() {
-            freezePreview.style.display = "none"; // 藏起定格畫面
+            freezePreview.style.display = "none";
             captureProductBtn.style.display = "inline-block";
             retakeBtn.style.display = "none";
             saveBtn.style.display = "none";
             statusDiv.innerText = `請對準綠框，按下「📸 2. 拍產品圖」`;
         }
 
-        // 5. 按下「📸 2. 拍產品圖」：照片定格凍結 + 生成 284x257 不變形圖檔
+        // 5. 第二階段：拍產品圖（畫面定格 + 284x257 不變形處理）
         function shootProductImage() {
             const targetWidth = 284;
             const targetHeight = 257;
@@ -352,20 +384,17 @@
                 sy = (videoHeight - sHeight) / 2;
             }
 
-            // A. 在隱藏 Canvas 上製作精確 284x257 中心裁切圖
             productCtx.clearRect(0, 0, targetWidth, targetHeight);
             productCtx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-            // B. 將處理好的影像複製到定格預覽 Canvas (覆蓋在視訊上，讓使用者看到畫面上鎖)
+            // 設定定格預覽
             freezePreview.style.display = "block";
             freezeCtx.clearRect(0, 0, targetWidth, targetHeight);
             freezeCtx.drawImage(productCanvas, 0, 0);
 
-            // C. 寫入 72 DPI 標頭並儲存 Base64 資料
             const rawDataURL = productCanvas.toDataURL('image/jpeg', 0.95);
             capturedBase64Data = setJpegDpi(rawDataURL, 72);
 
-            // D. 切換按鈕：隱藏拍照鈕，顯示「重拍」與「確認存檔」
             captureProductBtn.style.display = "none";
             retakeBtn.style.display = "inline-block";
             saveBtn.style.display = "inline-block";
@@ -373,33 +402,29 @@
             statusDiv.innerText = "畫面已定格！確認無誤請按「確認存檔」，或按「重拍」";
         }
 
-        // 6. 按下「💾 確認存檔」：觸發下載並自動重置回到第一階段 (辨識新品號)
+        // 6. 確認存檔並自動回到第一階段
         function confirmSaveAndReset() {
             if (!capturedBase64Data) return;
 
-            // 觸發下載
             downloadImageToMobile(capturedBase64Data, confirmedFileName + ".jpg");
 
             alert(`已下載：${confirmedFileName}.jpg！即將回到第一階段拍攝新品號。`);
 
-            // 自動重置切換回第一階段
             resetToStep1();
         }
 
-        // 自動重置回第一階段 (辨識新品號)
+        // 自動重置回到第一階段
         function resetToStep1() {
             confirmedFileName = "";
             capturedBase64Data = "";
             manualInput.value = "";
 
-            // 隱藏定格與階段 2 按鈕
             freezePreview.style.display = "none";
             captureProductBtn.style.display = "none";
             retakeBtn.style.display = "none";
             saveBtn.style.display = "none";
             selectionPanel.style.display = "none";
 
-            // 切換回階段 1 的橘框 (3.5:1.5) 與顯示階段 1 按鈕
             cameraBox.className = "camera-container-step1";
             stepBadge.innerText = "第一階段：拍攝並辨識品號 (3.5:1.5 視窗)";
             stepBadge.style.backgroundColor = "#007bff";
