@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V2.6</title>
+    <title>門市品號辨識系統 V2.7</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -66,7 +66,6 @@
         #freezeCanvas { z-index: 3; display: none; }
         #boxCanvas { z-index: 5; }
 
-        /* 第二階段定格畫布 */
         #productFreezeCanvas {
             z-index: 4;
             display: none;
@@ -127,23 +126,31 @@
             text-align: center;
         }
 
+        /* 候選品號按鈕基礎樣式 */
         .result-item {
-            padding: 10px;
-            margin: 5px 0;
+            padding: 12px;
+            margin: 6px 0;
             background: #f8f9fa;
-            border: 1px solid #ddd;
+            border: 2px solid #ddd;
             cursor: pointer;
-            border-radius: 5px;
+            border-radius: 6px;
             text-align: left;
             font-weight: bold;
+            transition: all 0.2s ease;
         }
 
-        .result-item:active { background: #e2e6ea; border-color: #007bff; }
+        /* 被點選/選取時的高亮外框視覺效果 */
+        .result-item.selected {
+            background: #e7f1ff;
+            border-color: #007bff;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.4);
+            color: #0056b3;
+        }
     </style>
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V2.6</h2>
+    <h2>門市品號辨識系統 V2.7</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
@@ -181,7 +188,6 @@
     <!-- 第二階段：產品拍照與定格區域 -->
     <div id="productBox" class="product-area" style="display:none">
         <video id="productVideo" autoplay playsinline></video>
-        <!-- 拍攝定格顯示用的 Canvas -->
         <canvas id="productFreezeCanvas" class="layer" width="284" height="257"></canvas>
     </div>
 
@@ -191,7 +197,6 @@
         <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
     </div>
 
-    <!-- 輔助畫布（隱藏） -->
     <canvas id="productCanvas" width="284" height="257" style="display:none;"></canvas>
 
     <script>
@@ -222,7 +227,6 @@
             } catch (e) { barcodeDetector = new BarcodeDetector(); }
         }
 
-        // 1. 啟動第一階段相機
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -511,6 +515,7 @@
             });
         }
 
+        // 顯示候選清單，並新增點選高亮外框的控制邏輯
         function showOCRResults() {
             let panel = document.getElementById("resultPanel");
             let results = document.getElementById("results");
@@ -520,12 +525,20 @@
                 status.innerHTML = "未辨識出有效字元，請手動輸入品號：";
             } else {
                 status.innerHTML = "辨識完成，請點選正確品號：";
-                ocrCandidates.forEach(item => {
+                ocrCandidates.forEach((item, index) => {
                     let div = document.createElement("div");
                     div.className = "result-item";
+                    if (index === 0) div.classList.add("selected"); // 預設選擇第一個
+
                     let tag = item.isBarcode ? " <span style='color:red;'>[條碼]</span>" : "";
                     div.innerHTML = `${formatDisplayCode(item.code)}${tag} <br><small style='color:#666;'>信心值：${item.score}%</small>`;
+
                     div.onclick = function () {
+                        // 清除其它選項的選取外框
+                        document.querySelectorAll('.result-item').forEach(el => el.classList.remove('selected'));
+                        // 為目前點選的項目加上外框
+                        div.classList.add('selected');
+                        // 將數值帶入輸入框
                         document.getElementById("manualCode").value = formatDisplayCode(item.code);
                     };
                     results.appendChild(div);
@@ -549,7 +562,6 @@
             document.getElementById("cameraBox").style.display = "none";
             document.getElementById("zoomBox").style.display = "none";
             
-            // 切換至第二階段
             document.getElementById("productBox").style.display = "block";
             document.getElementById("takeProductBtn").style.display = "inline-block";
             document.getElementById("retakeProductBtn").style.display = "none";
@@ -561,9 +573,6 @@
             openProductCamera();
         }
 
-        // ===============================
-        // 第二階段：產品拍照 / 定格 / 重拍 / 存檔
-        // ===============================
         const productVideo = document.getElementById("productVideo");
         const productCanvas = document.getElementById("productCanvas");
         const productCtx = productCanvas.getContext("2d");
@@ -577,11 +586,10 @@
                     audio: false
                 });
                 productVideo.srcObject = pStream;
-                retakeProductPhoto(); // 初始化顯露即時鏡頭
+                retakeProductPhoto();
             } catch (e) { alert("產品鏡頭錯誤：" + e.message); }
         }
 
-        // 拍攝產品圖：截取畫面並瞬間「定格」
         function takeProductPhoto() {
             const targetW = 284; const targetH = 257;
             const vw = productVideo.videoWidth || 1920;
@@ -601,12 +609,10 @@
             productCtx.clearRect(0, 0, targetW, targetH);
             productCtx.drawImage(productVideo, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-            // 繪製並顯示定格層 (蓋住鏡頭)
             productFreezeCtx.clearRect(0, 0, targetW, targetH);
             productFreezeCtx.drawImage(productCanvas, 0, 0);
             productFreezeCanvas.style.display = "block";
 
-            // 按鈕切換
             document.getElementById("takeProductBtn").style.display = "none";
             document.getElementById("retakeProductBtn").style.display = "inline-block";
             document.getElementById("saveBtn").style.display = "inline-block";
@@ -614,10 +620,9 @@
             status.innerHTML = "照片已定格！滿意請點「💾 確認存檔」，否則點「🔄 重拍」";
         }
 
-        // 重拍產品圖：隱藏定格層，露出即時鏡頭畫面
         function retakeProductPhoto() {
             productFreezeCtx.clearRect(0, 0, 284, 257);
-            productFreezeCanvas.style.display = "none"; // 隱藏定格 Canvas，露出現場即時視訊
+            productFreezeCanvas.style.display = "none";
 
             document.getElementById("takeProductBtn").style.display = "inline-block";
             document.getElementById("retakeProductBtn").style.display = "none";
