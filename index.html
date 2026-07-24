@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V2.5</title>
+    <title>門市品號辨識系統 V2.6</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -27,6 +27,7 @@
             font-size: 14px;
         }
 
+        /* 第一階段 1200x800 取景與劃框容器 */
         .camera-area {
             width: 100%;
             max-width: 900px;
@@ -40,6 +41,7 @@
             touch-action: none;
         }
 
+        /* 第二階段 284x257 產品拍照容器 */
         .product-area {
             width: 284px;
             height: 257px;
@@ -64,6 +66,13 @@
         #freezeCanvas { z-index: 3; display: none; }
         #boxCanvas { z-index: 5; }
 
+        /* 第二階段定格畫布 */
+        #productFreezeCanvas {
+            z-index: 4;
+            display: none;
+        }
+
+        /* 放大鏡 */
         #zoomBox {
             display: none;
             width: 320px;
@@ -134,16 +143,18 @@
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V2.5</h2>
+    <h2>門市品號辨識系統 V2.6</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
+    <!-- 第一階段取景區域 -->
     <div id="cameraBox" class="camera-area">
         <video id="video" autoplay playsinline></video>
         <canvas id="freezeCanvas" class="layer" width="1200" height="800"></canvas>
         <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
     </div>
 
+    <!-- 放大鏡 -->
     <div id="zoomBox">
         <canvas id="zoomCanvas" width="600" height="240"></canvas>
     </div>
@@ -158,6 +169,7 @@
 
     <div id="status">請點擊「開啟鏡頭」</div>
 
+    <!-- 結果選單 -->
     <div id="resultPanel">
         <h3 style="margin-top:0;">確認品號</h3>
         <div id="results"></div>
@@ -166,13 +178,21 @@
         <button onclick="confirmCode()" class="green" style="width:100%; font-size:18px;">確認品號 ➔ 下一步</button>
     </div>
 
+    <!-- 第二階段：產品拍照與定格區域 -->
     <div id="productBox" class="product-area" style="display:none">
         <video id="productVideo" autoplay playsinline></video>
-        <canvas id="productCanvas" width="284" height="257"></canvas>
+        <!-- 拍攝定格顯示用的 Canvas -->
+        <canvas id="productFreezeCanvas" class="layer" width="284" height="257"></canvas>
     </div>
 
-    <button id="takeProductBtn" style="display:none" class="green" onclick="takeProductPhoto()">📸 拍產品圖</button>
-    <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
+    <div>
+        <button id="takeProductBtn" style="display:none" class="green" onclick="takeProductPhoto()">📸 拍產品圖</button>
+        <button id="retakeProductBtn" style="display:none" class="orange" onclick="retakeProductPhoto()">🔄 重拍</button>
+        <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
+    </div>
+
+    <!-- 輔助畫布（隱藏） -->
+    <canvas id="productCanvas" width="284" height="257" style="display:none;"></canvas>
 
     <script>
         const video = document.getElementById("video");
@@ -202,6 +222,7 @@
             } catch (e) { barcodeDetector = new BarcodeDetector(); }
         }
 
+        // 1. 啟動第一階段相機
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -377,16 +398,14 @@
             );
         }
 
-        // 核心修復：強制放大 3 倍影像，大幅提高 OCR 解析度與正確率
         function getCropCanvas(preprocess = false) {
             if (!selectedBox) return null;
-            let scale = 3; // 放大 3 倍提升 AI 解析度
+            let scale = 3;
             let crop = document.createElement("canvas");
             crop.width = selectedBox.w * scale;
             crop.height = selectedBox.h * scale;
             let ctx = crop.getContext("2d");
             
-            // 開啟平滑放大模式
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
 
@@ -402,7 +421,6 @@
             return crop;
         }
 
-        // 對比度超解析增強
         function preprocessCropImage(canvas) {
             const ctx = canvas.getContext("2d");
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -436,7 +454,6 @@
             let rawCrop = getCropCanvas(false);
             let processedCrop = getCropCanvas(true);
 
-            // 1. Google ML Kit 條碼掃描
             if (barcodeDetector) {
                 try {
                     const barcodes = await barcodeDetector.detect(rawCrop);
@@ -449,12 +466,11 @@
                 } catch (e) { console.log(e); }
             }
 
-            // 2. 高解析 OCR 辨識
             try {
                 const worker = await Tesseract.createWorker('eng');
                 await worker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/*',
-                    tessedit_pageseg_mode: '7', // 強制單行模式
+                    tessedit_pageseg_mode: '7',
                     load_system_dawg: '0', load_freq_dawg: '0'
                 });
 
@@ -532,8 +548,12 @@
             document.getElementById("resultPanel").style.display = "none";
             document.getElementById("cameraBox").style.display = "none";
             document.getElementById("zoomBox").style.display = "none";
+            
+            // 切換至第二階段
             document.getElementById("productBox").style.display = "block";
             document.getElementById("takeProductBtn").style.display = "inline-block";
+            document.getElementById("retakeProductBtn").style.display = "none";
+            document.getElementById("saveBtn").style.display = "none";
 
             document.getElementById("stepTitle").innerHTML = "第二階段：拍攝產品圖 (品號：" + confirmedCode + ")";
             status.innerHTML = "請對準產品，按「📸 拍產品圖」";
@@ -541,9 +561,14 @@
             openProductCamera();
         }
 
+        // ===============================
+        // 第二階段：產品拍照 / 定格 / 重拍 / 存檔
+        // ===============================
         const productVideo = document.getElementById("productVideo");
         const productCanvas = document.getElementById("productCanvas");
         const productCtx = productCanvas.getContext("2d");
+        const productFreezeCanvas = document.getElementById("productFreezeCanvas");
+        const productFreezeCtx = productFreezeCanvas.getContext("2d");
 
         async function openProductCamera() {
             try {
@@ -552,9 +577,11 @@
                     audio: false
                 });
                 productVideo.srcObject = pStream;
+                retakeProductPhoto(); // 初始化顯露即時鏡頭
             } catch (e) { alert("產品鏡頭錯誤：" + e.message); }
         }
 
+        // 拍攝產品圖：截取畫面並瞬間「定格」
         function takeProductPhoto() {
             const targetW = 284; const targetH = 257;
             const vw = productVideo.videoWidth || 1920;
@@ -574,8 +601,29 @@
             productCtx.clearRect(0, 0, targetW, targetH);
             productCtx.drawImage(productVideo, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-            status.innerHTML = "照片已拍攝！請點擊「💾 確認存檔」";
+            // 繪製並顯示定格層 (蓋住鏡頭)
+            productFreezeCtx.clearRect(0, 0, targetW, targetH);
+            productFreezeCtx.drawImage(productCanvas, 0, 0);
+            productFreezeCanvas.style.display = "block";
+
+            // 按鈕切換
+            document.getElementById("takeProductBtn").style.display = "none";
+            document.getElementById("retakeProductBtn").style.display = "inline-block";
             document.getElementById("saveBtn").style.display = "inline-block";
+
+            status.innerHTML = "照片已定格！滿意請點「💾 確認存檔」，否則點「🔄 重拍」";
+        }
+
+        // 重拍產品圖：隱藏定格層，露出即時鏡頭畫面
+        function retakeProductPhoto() {
+            productFreezeCtx.clearRect(0, 0, 284, 257);
+            productFreezeCanvas.style.display = "none"; // 隱藏定格 Canvas，露出現場即時視訊
+
+            document.getElementById("takeProductBtn").style.display = "inline-block";
+            document.getElementById("retakeProductBtn").style.display = "none";
+            document.getElementById("saveBtn").style.display = "none";
+
+            status.innerHTML = "請對準產品，按下「📸 拍產品圖」";
         }
 
         function setJpegDpi(base64, dpi) {
@@ -617,14 +665,16 @@
         function resetSystem() {
             confirmedCode = "";
             unfreezeImage();
+            retakeProductPhoto();
 
             document.getElementById("productBox").style.display = "none";
             document.getElementById("takeProductBtn").style.display = "none";
+            document.getElementById("retakeProductBtn").style.display = "none";
             document.getElementById("saveBtn").style.display = "none";
 
             document.getElementById("cameraBox").style.display = "block";
             document.getElementById("stepTitle").innerHTML = "第一階段：品號辨識";
-            status.innerHTML = "已重置，請開啟鏡頭開始下一筆";
+            status.innerHTML = "已回到第一階段，請開啟鏡頭開始下一筆";
         }
     </script>
 </body>
