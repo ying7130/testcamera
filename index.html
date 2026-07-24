@@ -749,4 +749,48 @@
             for (let i = 0; i < bytes.length - 9; i++) {
                 if (bytes[i] === 0xFF && bytes[i + 1] === 0xE0) {
                     bytes[i + 11] = 1;
-                    bytes[i + 12] = (dpi >> 8
+                    bytes[i + 12] = (dpi >> 8) & 255;
+                    bytes[i + 13] = dpi & 255;
+                    bytes[i + 14] = (dpi >> 8) & 255;
+                    bytes[i + 15] = dpi & 255;
+                    break;
+                }
+            }
+            let result = "";
+            bytes.forEach(b => { result += String.fromCharCode(b); });
+            return "data:image/jpeg;base64," + btoa(result);
+        }
+
+        function saveImage() {
+            let raw = productCanvas.toDataURL("image/jpeg", 0.95);
+            let finalImage = setJpegDpi(raw, 72);
+            let filename = confirmedCode + ".jpg";
+
+            let link = document.createElement("a");
+            link.href = finalImage;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            alert("已存檔：" + filename);
+            resetSystem();
+        }
+
+        function resetSystem() {
+            confirmedCode = "";
+            unfreezeImage();
+            retakeProductPhoto();
+
+            document.getElementById("productBox").style.display = "none";
+            document.getElementById("takeProductBtn").style.display = "none";
+            document.getElementById("retakeProductBtn").style.display = "none";
+            document.getElementById("saveBtn").style.display = "none";
+
+            document.getElementById("cameraBox").style.display = "block";
+            document.getElementById("stepTitle").innerHTML = "第一階段：品號辨識";
+            status.innerHTML = "已回到第一階段，請開啟鏡頭開始下一筆";
+        }
+    </script>
+</body>
+</html>
