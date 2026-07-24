@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V3.4</title>
+    <title>門市品號辨識系統 V3.5</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -38,7 +38,7 @@
             background: black;
             border: 3px solid #ff9800;
             border-radius: 8px;
-            touch-action: none;
+            touch-action: none; /* 阻止瀏覽器預設捲動 */
         }
 
         /* 第二階段 284x257 產品拍照容器 */
@@ -172,7 +172,7 @@
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V3.4</h2>
+    <h2>門市品號辨識系統 V3.5</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
@@ -261,11 +261,13 @@
         let confirmedCode = "";
         let barcodeDetector = null;
 
+        // 圖片變換矩陣狀態
         let imgRotation = 0;
         let imgScale = 1.0;
         let imgOffsetX = 0;
         let imgOffsetY = 0;
 
+        // 手勢操控變數
         let isDragBox = false;
         let isResizeBox = false;
         let isDragImage = false;
@@ -349,15 +351,21 @@
             createDefaultBox();
         }
 
+        // 以「取景視窗中心點 (600, 400)」為唯一固定旋轉與縮放軸心
         function renderTransformedImage() {
             freezeCtx.clearRect(0, 0, 1200, 800);
             freezeCtx.save();
 
-            freezeCtx.translate(600 + imgOffsetX, 400 + imgOffsetY);
+            // 1. 先將畫布座標原點平移至「視窗中心 (600, 400)」
+            freezeCtx.translate(600, 400);
+            // 2. 以視窗中心進行旋轉
             freezeCtx.rotate((imgRotation * Math.PI) / 180);
+            // 3. 以視窗中心進行縮放
             freezeCtx.scale(imgScale, imgScale);
+            // 4. 帶入照片自身的位移偏移量
+            freezeCtx.translate(-600 + imgOffsetX, -400 + imgOffsetY);
 
-            freezeCtx.drawImage(rawSnapshotCanvas, -600, -400);
+            freezeCtx.drawImage(rawSnapshotCanvas, 0, 0);
             freezeCtx.restore();
 
             updateZoom();
@@ -521,9 +529,16 @@
             } else if (isDragImage) {
                 let dx = pos.x - touchStartPos.x;
                 let dy = pos.y - touchStartPos.y;
-                imgOffsetX += dx;
-                imgOffsetY += dy;
+
+                // 將螢幕拖曳量轉置回旋轉與縮放後的坐標系，使單指拖曳永遠符合直覺
+                let rad = -(imgRotation * Math.PI) / 180;
+                let unrotatedDx = (dx * Math.cos(rad) - dy * Math.sin(rad)) / imgScale;
+                let unrotatedDy = (dx * Math.sin(rad) + dy * Math.cos(rad)) / imgScale;
+
+                imgOffsetX += unrotatedDx;
+                imgOffsetY += unrotatedDy;
                 touchStartPos = pos;
+
                 renderTransformedImage();
             }
         }
@@ -686,7 +701,6 @@
             });
         }
 
-        // 簡化結果顯示（完全移除信心值）
         function showOCRResults() {
             let panel = document.getElementById("resultPanel");
             let results = document.getElementById("results");
