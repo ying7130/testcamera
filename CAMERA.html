@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>門市品號辨識系統</title>
+    <!-- 引入免費開源的 AI 辨識庫 -->
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        button { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; }
+        #preview { border: 1px solid #ccc; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>門市產品辨識上傳</h2>
+    
+    <!-- 限制只能調用後鏡頭拍照 -->
+    <input type="file" accept="image/*" capture="environment" id="cameraInput" style="display:none;">
+    <button onclick="document.getElementById('cameraInput').click()">📷 拍照辨識品號</button>
+    
+    <div id="status">準備就緒</div>
+    <canvas id="preview" width="286" height="257"></canvas>
+
+    <script>
+        const cameraInput = document.getElementById('cameraInput');
+        const statusDiv = document.getElementById('status');
+        const canvas = document.getElementById('preview');
+        const ctx = canvas.getContext('2d');
+
+        cameraInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            statusDiv.innerText = "正在處理圖片尺寸...";
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+            
+            img.onload = function() {
+                // 1. 強制裁切並縮放到指定尺寸 286 * 257
+                ctx.drawImage(img, 0, 0, 286, 257);
+                canvas.style.display = "block";
+                
+                // 2. 開始 AI 辨識
+                statusDiv.innerText = "AI 正在辨識英文品號...";
+                recognizeText();
+            };
+        });
+
+        function recognizeText() {
+            // 將 canvas 的圖片轉為 base64 丟給 AI 辨識
+            const dataURL = canvas.toDataURL('image/jpeg', 0.9); // 0.9 壓縮率，維持 72dpi 左右品質
+            
+            Tesseract.recognize(dataURL, 'eng') // 指定辨識英文
+            .then(({ data: { text } }) => {
+                // 清理辨識出的文字，只保留英數字
+                let cleanText = text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                
+                if(!cleanText) {
+                    statusDiv.innerText = "辨識失敗，請重新拍照";
+                    return;
+                }
+
+                // 3. 半形轉全形
+                let fullWidthText = toFullWidth(cleanText);
+                statusDiv.innerText = `辨識成功！全形品號：${fullWidthText}，正在上傳至 NAS...`;
+                
+                // 4. 上傳至後端 (呼叫上傳程式)
+                uploadToNAS(dataURL, fullWidthText);
+            })
+            .catch(err => {
+                statusDiv.innerText = "辨識出錯：" + err;
+            });
+        }
+
+        // 半形轉全形函式
+        function toFullWidth(str) {
+            return str.replace(/[A-Za-z0-9]/g, function(s) {
+                return String.fromCharCode(s.charCodeAt(0) + 0xFEE0);
+            });
+        }
+
+        // 模擬上傳到 NAS 後端
+        function uploadToNAS(base64Image, fileName) {
+            // 這裡透過 Fetch API 把圖片與全形檔名傳送給後端伺服器 (如 PHP)
+            // 後端再透過伺服器權限直接寫入 NAS 指定資料夾
+            console.log("準備上傳:", fileName + ".jpg");
+            
+            /* 
+            fetch('upload.php', {
+                method: 'POST',
+                body: JSON.stringify({ image: base64Image, filename: fileName })
+            }).then(res => ... )
+            */
+        }
+    </script>
+</body>
+</html>
