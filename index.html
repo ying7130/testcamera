@@ -13,6 +13,7 @@
             padding: 20px; 
             background-color: #f5f5f5;
         }
+        /* 取景框：保持 284:257 比例 (約 1.105 : 1) */
         .camera-container {
             width: 284px;
             height: 257px;
@@ -26,7 +27,7 @@
         #webcam {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: cover; /* 保持比例填滿取景框 */
         }
         button { 
             padding: 10px 20px; 
@@ -77,14 +78,15 @@
             font-size: 15px;
             margin-bottom: 8px;
         }
-        #captureCanvas { display: none; }
+        /* 隱藏輔助 Canvas */
+        #highResCanvas, #targetCanvas { display: none; }
     </style>
 </head>
 <body>
 
     <h2>門市產品辨識系統</h2>
     
-    <!-- 284x257 取景框 -->
+    <!-- 284x257 比例取景框 -->
     <div class="camera-container">
         <video id="webcam" autoplay playsinline></video>
     </div>
@@ -108,90 +110,101 @@
         </div>
     </div>
 
-    <canvas id="captureCanvas" width="284" height="257"></canvas>
+    <!-- 1. 高解析度 Canvas (辨識用) -->
+    <canvas id="highResCanvas"></canvas>
+    <!-- 2. 284x257 最終輸出 Canvas (存檔用) -->
+    <canvas id="targetCanvas" width="284" height="257"></canvas>
 
     <script>
         const video = document.getElementById('webcam');
-        const canvas = document.getElementById('captureCanvas');
-        const ctx = canvas.getContext('2d');
+        const highResCanvas = document.getElementById('highResCanvas');
+        const targetCanvas = document.getElementById('targetCanvas');
+        const highResCtx = highResCanvas.getContext('2d');
+        const targetCtx = targetCanvas.getContext('2d');
+
         const statusDiv = document.getElementById('status');
         const captureBtn = document.getElementById('captureBtn');
         const selectionPanel = document.getElementById('selectionPanel');
         const optionsContainer = document.getElementById('optionsContainer');
 
-        let currentImageDataURL = ""; // 儲存當前帶 72 DPI 的 Base64 圖片
-
-        // 1. 初始化鏡頭
+        // 1. 初始化鏡頭 (請求高解析度)
         async function initCamera() {
             statusDiv.innerText = "正在啟動鏡頭...";
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { 
                         facingMode: { exact: "environment" },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     },
                     audio: false
                 });
                 video.srcObject = stream;
                 captureBtn.disabled = false;
-                statusDiv.innerText = "請將品號對準 284x257 藍框內，點擊擷取";
+                statusDiv.innerText = "請將品號對準取景框，點擊擷取";
             } catch (err) {
                 try {
                     const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
                     video.srcObject = fallbackStream;
                     captureBtn.disabled = false;
-                    statusDiv.innerText = "已啟用備用鏡頭，請對準藍框";
+                    statusDiv.innerText = "已啟用備用鏡頭";
                 } catch (e) {
                     statusDiv.innerText = "無法取得鏡頭權限：" + e.message;
                 }
             }
         }
 
-        // 2. 擷取、72 DPI 處理並分析多筆候選文字
-        function captureAndRecognize() {
+        // 2. 用高畫質影像進行辨識
+        async function captureAndRecognize() {
             selectionPanel.style.display = "none";
             optionsContainer.innerHTML = "";
-            statusDiv.innerText = "正在擷取影像並分析文字...";
+            statusDiv.innerText = "正在高解析度擷取並辨識...";
             
-            ctx.drawImage(video, 0, 0, 284, 257);
-            const originalDataURL = canvas.toDataURL('image/jpeg', 0.95);
+            // 抓取相機實體解析度 (例如 1920x1080)
+            const vWidth = video.videoWidth || 1280;
+            const vHeight = video.videoHeight || 720;
             
-            // 強制寫入 72 DPI 檔頭並存入全域變數
-            currentImageDataURL = setJpegDpi(originalDataURL, 72);
+            highResCanvas.width = vWidth;
+            highResCanvas.height = vHeight;
+            
+            // 畫出完整高畫質畫面
+            highResCtx.drawImage(video, 0, 0, vWidth, vHeight);
 
-            // 進行 OCR 辨識
-            Tesseract.recognize(currentImageDataURL, 'eng')
-            .then(({ data: { lines } }) => {
-                // 將辨識出的每一行文字拆解並過濾空字串
+            // 使用 Tesseract 並加上字元白名單（提高辨識率，避免雜訊亂猜）
+            try {
+                const worker = await Tesseract.createWorker('eng');
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/*_',
+                });
+
+                const { data: { lines } } = await worker.recognize(highResCanvas);
+                await worker.terminate();
+
                 let candidates = [];
-                
                 lines.forEach(line => {
-                    // 移除無效字元，只保留英數字與符號
                     let clean = line.text.replace(/[^A-Za-z0-9*\/-_]/g, '').toUpperCase();
-                    if (clean.length > 0 && !candidates.includes(clean)) {
+                    if (clean.length >= 3 && !candidates.includes(clean)) {
                         candidates.push(clean);
                     }
                 });
 
                 if (candidates.length === 0) {
-                    statusDiv.innerText = "未辨識到文字，請手動輸入品號：";
+                    statusDiv.innerText = "未辨識到品號，請手動輸入：";
                     showSelectionPanel([]);
                     return;
                 }
 
-                statusDiv.innerText = `找到 ${candidates.length} 筆可能資料，請在下方選擇：`;
+                statusDiv.innerText = `找到 ${candidates.length} 筆可能資料，請選擇：`;
                 showSelectionPanel(candidates);
-            })
-            .catch(err => {
+
+            } catch (err) {
                 statusDiv.innerText = "辨識發生錯誤：" + err.message;
-            });
+            }
         }
 
-        // 3. 顯示候選按鈕選單
+        // 3. 顯示選單面板
         function showSelectionPanel(candidates) {
             optionsContainer.innerHTML = "";
-            
             candidates.forEach(text => {
                 const btn = document.createElement('button');
                 btn.className = 'option-item';
@@ -199,7 +212,6 @@
                 btn.onclick = () => processAndUpload(text);
                 optionsContainer.appendChild(btn);
             });
-
             selectionPanel.style.display = "block";
         }
 
@@ -207,37 +219,39 @@
         function submitManual() {
             const val = document.getElementById('manualInput').value.trim();
             if (!val) {
-                alert("請輸入有效的品號！");
+                alert("請輸入品號！");
                 return;
             }
             processAndUpload(val);
         }
 
-        // 5. 處理檔名（判斷特殊符號轉全形）並執行上傳
+        // 5. 確定品號後：才【強制轉成 284x257px】與【寫入 72 DPI】並上傳
         function processAndUpload(rawText) {
-            // 清理文字
             let cleanText = rawText.replace(/[^A-Za-z0-9*\/-_]/g, '').toUpperCase();
             
-            // 判斷是否含有特殊符號
+            // 判斷是否含有特殊符號 -> 決定半形/全形
             const hasSpecialChar = /[^A-Za-z0-9]/.test(cleanText);
-            let finalFileName = "";
+            let finalFileName = hasSpecialChar ? toFullWidth(cleanText) : cleanText;
 
-            if (hasSpecialChar) {
-                // 含有特殊符號 -> 轉全形
-                finalFileName = toFullWidth(cleanText);
-            } else {
-                // 純英數字 -> 保留半形
-                finalFileName = cleanText;
-            }
+            statusDiv.innerText = `已確認品號：${finalFileName}，正在生成 284x257 圖片...`;
 
-            statusDiv.innerText = `已確認品號：${finalFileName}，正在上傳至 NAS...`;
+            // 【關鍵步驟】在這裡才把畫面強制繪製縮放到 284x257 Canvas 上
+            targetCtx.drawImage(highResCanvas, 0, 0, 284, 257);
+            
+            // 取得 284x257 JPEG Base64
+            const rawTargetDataURL = targetCanvas.toDataURL('image/jpeg', 0.95);
+            
+            // 寫入 72 DPI Header
+            const finalImageBase64 = setJpegDpi(rawTargetDataURL, 72);
+
+            statusDiv.innerText = `已產生 284x257 72DPI 圖檔，正在上傳至 NAS...`;
             selectionPanel.style.display = "none";
 
-            // 呼叫上傳 (傳送 284x257, 72 DPI 圖檔與檔名)
-            uploadToNAS(currentImageDataURL, finalFileName);
+            // 呼叫上傳
+            uploadToNAS(finalImageBase64, finalFileName);
         }
 
-        // 6. 寫入 72 DPI 檔頭
+        // 6. 修改 JPEG 檔頭寫入 72 DPI
         function setJpegDpi(base64Image, dpi) {
             const byteString = atob(base64Image.split(',')[1]);
             const buffer = new Uint8Array(byteString.length);
@@ -267,16 +281,18 @@
             return 'data:image/jpeg;base64,' + btoa(binary);
         }
 
-        // 7. 全形轉換（含特殊符號）
+        // 7. 全形轉換
         function toFullWidth(str) {
             return str.replace(/[\u0021-\u007E]/g, function(s) {
                 return String.fromCharCode(s.charCodeAt(0) + 0xFEE0);
             });
         }
 
-        // 8. 上傳至 NAS
+        // 8. 模擬上傳 NAS
         function uploadToNAS(base64Image, fileName) {
-            console.log("成功上傳 284x257 72DPI 圖檔！檔名為:", fileName + ".jpg");
+            console.log("成功上傳！");
+            console.log("檔名:", fileName + ".jpg");
+            console.log("圖檔規格: 284x257 px, 72 DPI");
         }
     </script>
 </body>
