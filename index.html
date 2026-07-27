@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>門市品號辨識系統 V3.5</title>
+    <title>門市品號辨識系統 V3.6</title>
     <!-- 載入 Tesseract.js OCR 庫 -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -27,11 +27,11 @@
             font-size: 14px;
         }
 
-        /* 第一階段 1200x800 取景與劃框容器 */
+        /* 第一階段 3000x2000 取景與劃框容器 */
         .camera-area {
             width: 100%;
             max-width: 900px;
-            aspect-ratio: 1200 / 800;
+            aspect-ratio: 3000 / 2000;
             margin: 10px auto;
             position: relative;
             overflow: hidden;
@@ -41,10 +41,11 @@
             touch-action: none; /* 阻止瀏覽器預設捲動 */
         }
 
-        /* 第二階段 284x257 產品拍照容器 */
+        /* 第二階段 1000x905 產品拍照容器 */
         .product-area {
-            width: 284px;
-            height: 257px;
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 1000 / 905;
             margin: 10px auto;
             position: relative;
             overflow: hidden;
@@ -172,15 +173,15 @@
 </head>
 <body>
 
-    <h2>門市品號辨識系統 V3.5</h2>
+    <h2>門市品號辨識系統 V3.6</h2>
 
     <div id="stepTitle" class="badge">第一階段：品號辨識</div>
 
-    <!-- 第一階段取景區域 -->
+    <!-- 第一階段 3000x2000 取景與劃框容器 -->
     <div id="cameraBox" class="camera-area">
         <video id="video" class="layer" autoplay playsinline muted></video>
-        <canvas id="freezeCanvas" class="layer" width="1200" height="800"></canvas>
-        <canvas id="boxCanvas" class="layer" width="1200" height="800"></canvas>
+        <canvas id="freezeCanvas" class="layer" width="3000" height="2000"></canvas>
+        <canvas id="boxCanvas" class="layer" width="3000" height="2000"></canvas>
     </div>
 
     <!-- 精密旋轉角度微調列 -->
@@ -219,10 +220,10 @@
         <button onclick="confirmCode()" class="green" style="width:100%; font-size:18px;">確認品號 ➔ 下一步</button>
     </div>
 
-    <!-- 第二階段：產品拍照與定格區域 -->
+    <!-- 第二階段：1000x905 產品拍照與定格區域 -->
     <div id="productBox" class="product-area" style="display:none">
         <video id="productVideo" class="layer" autoplay playsinline muted></video>
-        <canvas id="productFreezeCanvas" class="layer" width="284" height="257"></canvas>
+        <canvas id="productFreezeCanvas" class="layer" width="1000" height="905"></canvas>
     </div>
 
     <div>
@@ -231,8 +232,8 @@
         <button id="saveBtn" style="display:none" class="green" onclick="saveImage()">💾 確認存檔</button>
     </div>
 
-    <canvas id="rawSnapshotCanvas" width="1200" height="800" style="display:none;"></canvas>
-    <canvas id="productCanvas" width="284" height="257" style="display:none;"></canvas>
+    <canvas id="rawSnapshotCanvas" width="3000" height="2000" style="display:none;"></canvas>
+    <canvas id="productCanvas" width="1000" height="905" style="display:none;"></canvas>
 
     <script>
         const video = document.getElementById("video");
@@ -296,10 +297,10 @@
 
         async function startCamera() {
             stopCurrentStream();
-            status.innerHTML = "正在啟動鏡頭...";
+            status.innerHTML = "正在啟動高畫質鏡頭...";
             
             const constraintsList = [
-                { video: { facingMode: { exact: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+                { video: { facingMode: { exact: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false },
                 { video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
                 { video: true, audio: false }
             ];
@@ -321,9 +322,9 @@
         }
 
         function freezeImage() {
-            const vw = video.videoWidth || 1920;
-            const vh = video.videoHeight || 1080;
-            const targetRatio = 1200 / 800;
+            const vw = video.videoWidth || 3000;
+            const vh = video.videoHeight || 2000;
+            const targetRatio = 3000 / 2000;
             const videoRatio = vw / vh;
 
             let sx, sy, sw, sh;
@@ -333,8 +334,8 @@
                 sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh) / 2;
             }
 
-            rawSnapshotCtx.clearRect(0, 0, 1200, 800);
-            rawSnapshotCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 1200, 800);
+            rawSnapshotCtx.clearRect(0, 0, 3000, 2000);
+            rawSnapshotCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 3000, 2000);
 
             resetImageTransform();
 
@@ -351,19 +352,19 @@
             createDefaultBox();
         }
 
-        // 以「取景視窗中心點 (600, 400)」為唯一固定旋轉與縮放軸心
+        // 以「取景視窗中心點 (1500, 1000)」為唯一固定旋轉與縮放軸心
         function renderTransformedImage() {
-            freezeCtx.clearRect(0, 0, 1200, 800);
+            freezeCtx.clearRect(0, 0, 3000, 2000);
             freezeCtx.save();
 
-            // 1. 先將畫布座標原點平移至「視窗中心 (600, 400)」
-            freezeCtx.translate(600, 400);
+            // 1. 先將畫布座標原點平移至「視窗中心 (1500, 1000)」
+            freezeCtx.translate(1500, 1000);
             // 2. 以視窗中心進行旋轉
             freezeCtx.rotate((imgRotation * Math.PI) / 180);
             // 3. 以視窗中心進行縮放
             freezeCtx.scale(imgScale, imgScale);
             // 4. 帶入照片自身的位移偏移量
-            freezeCtx.translate(-600 + imgOffsetX, -400 + imgOffsetY);
+            freezeCtx.translate(-1500 + imgOffsetX, -1000 + imgOffsetY);
 
             freezeCtx.drawImage(rawSnapshotCanvas, 0, 0);
             freezeCtx.restore();
@@ -414,13 +415,13 @@
         }
 
         function createDefaultBox() {
-            selectedBox = { x: 300, y: 320, w: 600, h: 160 };
+            selectedBox = { x: 750, y: 800, w: 1500, h: 400 };
             redrawBox();
             updateZoom();
         }
 
         function resetBox() {
-            boxCtx.clearRect(0, 0, 1200, 800);
+            boxCtx.clearRect(0, 0, 3000, 2000);
             selectedBox = null;
             updateZoom();
         }
@@ -429,8 +430,8 @@
             const rect = boxCanvas.getBoundingClientRect();
             let touch = e.touches ? e.touches[0] : e;
             return {
-                x: Math.round((touch.clientX - rect.left) * (1200 / rect.width)),
-                y: Math.round((touch.clientY - rect.top) * (800 / rect.height))
+                x: Math.round((touch.clientX - rect.left) * (3000 / rect.width)),
+                y: Math.round((touch.clientY - rect.top) * (2000 / rect.height))
             };
         }
 
@@ -444,19 +445,19 @@
             if (!selectedBox) return false;
             let rx = selectedBox.x + selectedBox.w;
             let ry = selectedBox.y + selectedBox.h;
-            return Math.abs(pos.x - rx) < 70 && Math.abs(pos.y - ry) < 70;
+            return Math.abs(pos.x - rx) < 150 && Math.abs(pos.y - ry) < 150;
         }
 
         function redrawBox() {
-            boxCtx.clearRect(0, 0, 1200, 800);
+            boxCtx.clearRect(0, 0, 3000, 2000);
             if (!selectedBox) return;
 
             boxCtx.strokeStyle = "#00ff00";
-            boxCtx.lineWidth = 6;
+            boxCtx.lineWidth = 12;
             boxCtx.strokeRect(selectedBox.x, selectedBox.y, selectedBox.w, selectedBox.h);
 
             boxCtx.fillStyle = "#00ff00";
-            boxCtx.fillRect(selectedBox.x + selectedBox.w - 20, selectedBox.y + selectedBox.h - 20, 40, 40);
+            boxCtx.fillRect(selectedBox.x + selectedBox.w - 40, selectedBox.y + selectedBox.h - 40, 80, 80);
         }
 
         function handleStart(e) {
@@ -517,20 +518,19 @@
             let pos = getCanvasPosition(e);
 
             if (isDragBox) {
-                selectedBox.x = Math.max(0, Math.min(1200 - selectedBox.w, pos.x - boxDragOffset.x));
-                selectedBox.y = Math.max(0, Math.min(800 - selectedBox.h, pos.y - boxDragOffset.y));
+                selectedBox.x = Math.max(0, Math.min(3000 - selectedBox.w, pos.x - boxDragOffset.x));
+                selectedBox.y = Math.max(0, Math.min(2000 - selectedBox.h, pos.y - boxDragOffset.y));
                 redrawBox();
                 updateZoom();
             } else if (isResizeBox) {
-                selectedBox.w = Math.max(80, pos.x - selectedBox.x);
-                selectedBox.h = Math.max(40, pos.y - selectedBox.y);
+                selectedBox.w = Math.max(160, pos.x - selectedBox.x);
+                selectedBox.h = Math.max(80, pos.y - selectedBox.y);
                 redrawBox();
                 updateZoom();
             } else if (isDragImage) {
                 let dx = pos.x - touchStartPos.x;
                 let dy = pos.y - touchStartPos.y;
 
-                // 將螢幕拖曳量轉置回旋轉與縮放後的坐標系，使單指拖曳永遠符合直覺
                 let rad = -(imgRotation * Math.PI) / 180;
                 let unrotatedDx = (dx * Math.cos(rad) - dy * Math.sin(rad)) / imgScale;
                 let unrotatedDy = (dx * Math.sin(rad) + dy * Math.cos(rad)) / imgScale;
@@ -590,7 +590,7 @@
 
         function getCropCanvas(preprocess = false) {
             if (!selectedBox) return null;
-            let scale = 3;
+            let scale = 1.5;
             let crop = document.createElement("canvas");
             crop.width = selectedBox.w * scale;
             crop.height = selectedBox.h * scale;
@@ -776,7 +776,7 @@
         }
 
         function takeProductPhoto() {
-            const targetW = 284; const targetH = 257;
+            const targetW = 1000; const targetH = 905;
             const vw = productVideo.videoWidth || 1920;
             const vh = productVideo.videoHeight || 1080;
 
@@ -806,7 +806,7 @@
         }
 
         function retakeProductPhoto() {
-            productFreezeCtx.clearRect(0, 0, 284, 257);
+            productFreezeCtx.clearRect(0, 0, 1000, 905);
             productFreezeCanvas.style.display = "none";
 
             document.getElementById("takeProductBtn").style.display = "inline-block";
