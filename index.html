@@ -816,11 +816,9 @@
             status.innerHTML = "請對準產品，按下「📸 拍產品圖」";
         }
 
-        function setJpegDpi(base64, dpi) {
-            let binary = atob(base64.split(",")[1]);
-            let bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
+        // 輔助函式：將 Uint8Array 的 JPEG 檔寫入 72 DPI 標記
+        function applyJpegDpiToBuffer(buffer, dpi = 72) {
+            const bytes = new Uint8Array(buffer);
             for (let i = 0; i < bytes.length - 9; i++) {
                 if (bytes[i] === 0xFF && bytes[i + 1] === 0xE0) {
                     bytes[i + 11] = 1;
@@ -831,25 +829,58 @@
                     break;
                 }
             }
-            let result = "";
-            bytes.forEach(b => { result += String.fromCharCode(b); });
-            return "data:image/jpeg;base64," + btoa(result);
+            return bytes;
         }
 
-        function saveImage() {
-            let raw = productCanvas.toDataURL("image/jpeg", 0.95);
-            let finalImage = setJpegDpi(raw, 72);
-            let filename = confirmedCode + ".jpg";
+        // 全平台相容的存檔函式 (iOS / Android / PDA)
+        async function saveImage() {
+            status.innerHTML = "正在處理照片存檔...";
+            let filename = (confirmedCode || "photo") + ".jpg";
 
-            let link = document.createElement("a");
-            link.href = finalImage;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            productCanvas.toBlob(async (blob) => {
+                if (!blob) {
+                    alert("照片產生失敗，請重試！");
+                    return;
+                }
 
-            alert("待存檔：" + filename);
-            resetSystem();
+                // 寫入 72 DPI 標記
+                const arrayBuffer = await blob.arrayBuffer();
+                const dpiBytes = applyJpegDpiToBuffer(arrayBuffer, 72);
+                const finalBlob = new Blob([dpiBytes], { type: "image/jpeg" });
+                const file = new File([finalBlob], filename, { type: "image/jpeg" });
+
+                // 1. 優先方案：使用 Web Share API (適用 iPhone Safari 與新版 Android)
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: '品號照片存檔',
+                        });
+                        resetSystem();
+                        return;
+                    } catch (err) {
+                        if (err.name === 'AbortError') {
+                            status.innerHTML = "已取消儲存";
+                            return;
+                        }
+                        console.log("Web Share 失敗，切換至傳統下載備案:", err);
+                    }
+                }
+
+                // 2. 備案：Blob URL 下載 (適用 PM85 PDA、一般 Android Chrome 與電腦版)
+                const blobUrl = URL.createObjectURL(finalBlob);
+                const link = document.createElement("a");
+                link.href = blobUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+                alert("已觸發存檔：" + filename);
+                resetSystem();
+
+            }, "image/jpeg", 0.90);
         }
 
         function resetSystem() {
